@@ -1,13 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { verifySessionToken } from "@/lib/auth-security";
+
+const PUBLIC_PATHS = [
+  "/login",
+  "/offline.html",
+  "/favicon.ico",
+  "/manifest.webmanifest",
+  "/api/login",
+  "/api/health",
+  "/health",
+];
 
 export async function proxy(request: NextRequest) {
-  const isAuth = Boolean(request.cookies.get("opti-activity")?.value);
   const path = request.nextUrl.pathname;
 
-  // Allow static assets, api routes, and icons
+  // Static assets are always allowed
   if (
     path.startsWith("/_next") ||
-    path.startsWith("/api") ||
     path.startsWith("/fonts") ||
     path.startsWith("/icons") ||
     path.startsWith("/uploads") ||
@@ -16,13 +25,30 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // If not logged in and not on /login, redirect to /login
-  if (!isAuth && path !== "/login") {
+  const token = request.cookies.get("opti-activity")?.value;
+  const session = verifySessionToken(token, 8 * 60);
+  const isAuthenticated = session.valid;
+
+  // Handle API routes
+  if (path.startsWith("/api")) {
+    if (PUBLIC_PATHS.includes(path)) {
+      return NextResponse.next();
+    }
+    if (!isAuthenticated) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401, headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
+    return NextResponse.next();
+  }
+
+  // Handle page routes
+  if (!isAuthenticated && !PUBLIC_PATHS.includes(path)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // If already logged in and visiting /login, redirect to /
-  if (isAuth && path === "/login") {
+  if (isAuthenticated && path === "/login") {
     return NextResponse.redirect(new URL("/", request.url));
   }
 

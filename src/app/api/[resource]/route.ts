@@ -2,8 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import fs from "node:fs/promises";
 import path from "node:path";
+import crypto from "node:crypto";
 import * as v from "@/lib/validation";
 import { renderInvoicePdf } from "@/lib/pdf";
+import {
+  createSessionToken,
+  verifySessionToken,
+  checkLoginRateLimit,
+  recordFailedLogin,
+  resetLoginRateLimit,
+} from "@/lib/auth-security";
 import {
   getStore,
   saveStore,
@@ -52,6 +60,11 @@ function fail(error: unknown) {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
+function checkAuth(request: NextRequest): boolean {
+  const token = request.cookies.get("opti-activity")?.value;
+  return verifySessionToken(token, 8 * 60).valid;
+}
+
 const searchSchema = z.object({
   q: z.string().max(100).default(""),
   page: z.coerce.number().int().min(1).max(10000).default(1),
@@ -67,6 +80,18 @@ const searchSchema = z.object({
 export async function GET(request: NextRequest, { params }: Params) {
   try {
     const { resource } = await params;
+
+    if (resource === "health") {
+      return success({ status: "healthy", timestamp: new Date().toISOString() });
+    }
+
+    if (!checkAuth(request)) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401, headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
+
     const store = getStore();
     const query = searchSchema.parse(
       Object.fromEntries(request.nextUrl.searchParams),
@@ -255,6 +280,14 @@ export async function GET(request: NextRequest, { params }: Params) {
 export async function POST(request: NextRequest, { params }: Params) {
   try {
     const { resource } = await params;
+
+    if (resource !== "login" && !checkAuth(request)) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401, headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
+
     const store = getStore();
 
     if (resource === "lens-upload") {
@@ -310,20 +343,57 @@ export async function POST(request: NextRequest, { params }: Params) {
     const body: unknown = await request.json();
 
     if (resource === "login") {
-      const p = v.loginSchema.parse(body);
-      const isMatch =
-        (p.email === "admin@opti-x.in" || p.email === "admin") &&
-        p.password === "LFR@26-1204";
+      const clientIp =
+        request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+        request.headers.get("x-real-ip") ||
+        "127.0.0.1";
 
-      if (!isMatch && p.password !== "LFR@26-1204") {
+      const rateCheck = checkLoginRateLimit(clientIp);
+      if (!rateCheck.allowed) {
+        return NextResponse.json(
+          { error: "Too many failed login attempts. Please try again in 15 minutes." },
+          {
+            status: 429,
+            headers: {
+              "Retry-After": String(rateCheck.retryAfterSeconds || 900),
+              "Cache-Control": "private, no-store",
+            },
+          },
+        );
+      }
+
+      const p = v.loginSchema.parse(body);
+      const expectedPassword = process.env.ADMIN_PASSWORD || "LFR@26-1204";
+      const expectedEmail = process.env.ADMIN_EMAIL || "admin@opti-x.in";
+
+      const emailMatches =
+        p.email.toLowerCase() === expectedEmail.toLowerCase() ||
+        p.email.toLowerCase() === "admin";
+
+      let passwordMatches = false;
+      try {
+        const bufA = Buffer.from(p.password);
+        const bufB = Buffer.from(expectedPassword);
+        if (bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB)) {
+          passwordMatches = true;
+        }
+      } catch {
+        passwordMatches = false;
+      }
+
+      if (!emailMatches || !passwordMatches) {
+        recordFailedLogin(clientIp);
         throw new Error("Unable to log in. Check your email and password.");
       }
 
+      resetLoginRateLimit(clientIp);
+      const token = createSessionToken(store.profile.id);
       const response = success({ ok: true });
-      response.cookies.set("opti-activity", `${Date.now()}`, {
+      response.cookies.set("opti-activity", token, {
         httpOnly: true,
         path: "/",
         sameSite: "lax",
+        maxAge: 8 * 3600,
       });
       return response;
     }
