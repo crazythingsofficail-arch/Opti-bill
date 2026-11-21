@@ -514,8 +514,27 @@ export function finaliseInvoice(invoiceId: string, key: string, payments: any[])
   const totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount_paise) || 0), 0);
   const balanceDue = Math.max(0, calc.grand_total - totalPaid);
 
-  const cust = getCustomer(draft.customer_id);
+  const cust = draft.customer_id ? getCustomer(draft.customer_id) : null;
   const isInterstate = (draft.place_of_supply_state_code || store.shop.state_code) !== store.shop.state_code;
+  const customerSnapshot = cust
+    ? {
+        id: cust.id,
+        name: cust.name,
+        phone: cust.phone,
+        address: cust.address,
+        city: cust.city,
+        state_code: cust.state_code,
+        gstin: cust.gstin,
+      }
+    : {
+        id: draft.customer_id || "walk-in",
+        name: "Walk-in Customer",
+        phone: "",
+        address: "",
+        city: "",
+        state_code: store.shop.state_code || "29",
+        gstin: null,
+      };
 
   const invoiceRecord: Invoice = {
     id: invoiceId,
@@ -528,7 +547,7 @@ export function finaliseInvoice(invoiceId: string, key: string, payments: any[])
     status: "finalised",
     display_status: "finalised",
     payment_status: balanceDue <= 0 ? "paid" : totalPaid > 0 ? "partial" : "unpaid",
-    customer_snapshot: cust ? { id: cust.id, name: cust.name, phone: cust.phone, address: cust.address, city: cust.city, state_code: cust.state_code, gstin: cust.gstin } : null,
+    customer_snapshot: customerSnapshot,
     shop_snapshot: store.shop,
     place_of_supply_state_code: draft.place_of_supply_state_code || store.shop.state_code,
     is_interstate: isInterstate,
@@ -766,6 +785,24 @@ export async function loadPrintDataFromStore(id: string): Promise<PrintData> {
   }
 
   const shop = invoice.shop_snapshot || store.shop;
+  const customerSnapshot = invoice.customer_snapshot || (customer ? {
+    id: customer.id,
+    name: customer.name,
+    phone: customer.phone,
+    address: customer.address,
+    city: customer.city,
+    state_code: customer.state_code,
+    gstin: customer.gstin,
+  } : {
+    id: invoice.customer_id || "walk-in",
+    name: "Walk-in Customer",
+    phone: "",
+    address: "",
+    city: "",
+    state_code: shop.state_code || "29",
+    gstin: null,
+  });
+
   const upi =
     shop?.upi_id && invoice.balance_due > 0
       ? `upi://pay?${new URLSearchParams({
@@ -778,7 +815,11 @@ export async function loadPrintDataFromStore(id: string): Promise<PrintData> {
       : null;
 
   return {
-    invoice,
+    invoice: {
+      ...invoice,
+      shop_snapshot: shop,
+      customer_snapshot: customerSnapshot,
+    },
     items,
     payments,
     order: (order || {

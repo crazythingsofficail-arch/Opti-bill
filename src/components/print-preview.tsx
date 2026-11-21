@@ -10,7 +10,7 @@ import {
   Plus,
   CheckCircle2,
 } from "lucide-react";
-import type { PrintData } from "@/lib/types";
+import type { PrintData, Shop } from "@/lib/types";
 import type { PrintLayout } from "@/lib/pdf";
 import { formatMoney, amountInWords } from "@/lib/money";
 import { displayDate } from "@/lib/client";
@@ -36,8 +36,52 @@ export function PrintPreview({
     logo,
     signature,
   } = data;
-  const s = i.shop_snapshot!,
-    c = i.customer_snapshot!;
+  const s: Shop = i.shop_snapshot || {
+    id: "shop-default",
+    name: "Opti-X Optical Care",
+    legal_name: "Opti-X Optical Care Pvt Ltd",
+    gstin: "29AAAAA0000A1Z5",
+    address: "100 Feet Ring Road, Indiranagar",
+    city: "Bengaluru",
+    state: "Karnataka",
+    state_code: "29",
+    pincode: "560038",
+    phone: "+919876543210",
+    email: "admin@opti-x.in",
+    gst_scheme: "regular",
+    invoice_prefix: "OX",
+    terms_text: "Standard 1-year warranty on frames. Lens coating warranty 6 months.",
+    warranty_text: "Frames and lenses covered against manufacturing defects.",
+    return_policy_text: "Prescription lenses are custom-made and non-refundable.",
+    composition_declaration: "",
+    reverse_charge_text: "",
+    privacy_text: "We protect customer and clinical eye examination data.",
+    privacy_version: "v1",
+    privacy_updated_at: null,
+    terms_of_use_text: "Terms of service for Opti-X Optical.",
+    consent_text: "I hereby consent to eye examination and prescription record retention.",
+    grievance_name: "Grievance Officer",
+    grievance_email: "grievance@opti-x.in",
+    retention_months: 84,
+    clinical_retention_months: 84,
+    hsn_digits: 4,
+    invoice_recipient_threshold_paise: 5000000,
+    upi_id: null,
+    bank_details: null,
+    einvoice_enabled: false,
+    require_owner_mfa: false,
+    logo_path: null,
+    signature_path: null,
+  };
+  const c = i.customer_snapshot || {
+    id: i.customer_id || "walk-in",
+    name: "Walk-in Customer",
+    phone: "",
+    address: "",
+    city: "",
+    state_code: s.state_code || "29",
+    gstin: null,
+  };
   const money = layout === "a4" || layout === "thermal";
   return (
     <>
@@ -109,7 +153,7 @@ export function PrintPreview({
             </span>
             <div>
               <strong style={{ fontSize: "14px" }}>
-                Bill completed for {c.name} ({i.invoice_no})
+                Bill completed for {c?.name || "Customer"} ({i.invoice_no})
               </strong>
               <div className="muted" style={{ fontSize: "12px" }}>
                 Document generated. Choose what you would like to do next:
@@ -133,13 +177,15 @@ export function PrintPreview({
               <ChartNoAxesCombined size={14} />
               Open report
             </Link>
-            <Link
-              href={`/customers/${c.id}`}
-              className="button secondary"
-              style={{ fontSize: "12px", padding: "6px 12px" }}
-            >
-              Customer profile
-            </Link>
+            {c?.id && c.id !== "walk-in" && (
+              <Link
+                href={`/customers/${c.id}`}
+                className="button secondary"
+                style={{ fontSize: "12px", padding: "6px 12px" }}
+              >
+                Customer profile
+              </Link>
+            )}
             <Link
               href="/new-bill"
               className="button primary"
@@ -242,8 +288,8 @@ export function PrintPreview({
           )}
         </section>
         <section className="print-section">
-          <strong>{c.name}</strong>
-          {c.phone && <p>Phone: {c.phone}</p>}
+          <strong>{c?.name || "Walk-in Customer"}</strong>
+          {c?.phone && <p>Phone: {c.phone}</p>}
           {c.address && (
             <p>
               {c.address}

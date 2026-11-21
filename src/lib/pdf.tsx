@@ -14,7 +14,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { formatMoney, amountInWords } from "./money";
 import { BRAND_FOOTER } from "./i18n";
-import type { PrintData, Prescription } from "./types";
+import type { PrintData, Prescription, Shop } from "./types";
 Font.register({
   family: "Roboto",
   fonts: [
@@ -243,8 +243,52 @@ export async function renderInvoicePdf(
   const pdfPhoto = resolvePdfImage(photo);
   const pdfLogo = resolvePdfImage(logo);
   const pdfSignature = resolvePdfImage(signature);
-  const shop = i.shop_snapshot!;
-  const c = i.customer_snapshot!;
+  const shop: Shop = i.shop_snapshot || {
+    id: "shop-default",
+    name: "Opti-X Optical Care",
+    legal_name: "Opti-X Optical Care Pvt Ltd",
+    gstin: "29AAAAA0000A1Z5",
+    address: "100 Feet Ring Road, Indiranagar",
+    city: "Bengaluru",
+    state: "Karnataka",
+    state_code: "29",
+    pincode: "560038",
+    phone: "+919876543210",
+    email: "admin@opti-x.in",
+    gst_scheme: "regular",
+    invoice_prefix: "OX",
+    terms_text: "Standard 1-year warranty on frames. Lens coating warranty 6 months.",
+    warranty_text: "Frames and lenses covered against manufacturing defects.",
+    return_policy_text: "Prescription lenses are custom-made and non-refundable.",
+    composition_declaration: "",
+    reverse_charge_text: "",
+    privacy_text: "We protect customer and clinical eye examination data.",
+    privacy_version: "v1",
+    privacy_updated_at: null,
+    terms_of_use_text: "Terms of service for Opti-X Optical.",
+    consent_text: "I hereby consent to eye examination and prescription record retention.",
+    grievance_name: "Grievance Officer",
+    grievance_email: "grievance@opti-x.in",
+    retention_months: 84,
+    clinical_retention_months: 84,
+    hsn_digits: 4,
+    invoice_recipient_threshold_paise: 5000000,
+    upi_id: null,
+    bank_details: null,
+    einvoice_enabled: false,
+    require_owner_mfa: false,
+    logo_path: null,
+    signature_path: null,
+  };
+  const c = i.customer_snapshot || {
+    id: i.customer_id || "walk-in",
+    name: "Walk-in Customer",
+    phone: "",
+    address: "",
+    city: "",
+    state_code: shop.state_code || "29",
+    gstin: null,
+  };
   const thermal = layout === "thermal",
     job = layout === "job",
     rxOnly = layout === "prescription";
@@ -333,8 +377,8 @@ export async function renderInvoicePdf(
           )}
         </View>
         <View style={s.section}>
-          <Text style={s.label}>{c.name}</Text>
-          {c.phone && <Text style={s.muted}>Phone: {c.phone}</Text>}
+          <Text style={s.label}>{c?.name || "Walk-in Customer"}</Text>
+          {c?.phone && <Text style={s.muted}>Phone: {c.phone}</Text>}
           {c.address && (
             <Text style={s.muted}>
               {c.address}
