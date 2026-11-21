@@ -60,6 +60,52 @@ function fail(error: unknown) {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB
+
+function validateImageBuffer(bytes: Buffer): "jpg" | "png" | "webp" {
+  if (bytes.length > MAX_UPLOAD_BYTES) {
+    throw new Error("File exceeds 10MB limit");
+  }
+  if (bytes.length < 12) {
+    throw new Error("Invalid image format. Only JPEG, PNG, and WebP images are allowed.");
+  }
+
+  // JPEG: FF D8 FF
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "jpg";
+  }
+
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return "png";
+  }
+
+  // WebP: RIFF (bytes 0..3) ... WEBP (bytes 8..11)
+  if (
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return "webp";
+  }
+
+  throw new Error("Invalid image format. Only JPEG, PNG, and WebP images are allowed.");
+}
+
 function checkAuth(request: NextRequest): boolean {
   const token = request.cookies.get("opti-activity")?.value;
   return verifySessionToken(token, 8 * 60).valid;
@@ -297,10 +343,11 @@ export async function POST(request: NextRequest, { params }: Params) {
       if (!(file instanceof File)) throw new Error("Upload an image file");
 
       const bytes = Buffer.from(await file.arrayBuffer());
+      const ext = validateImageBuffer(bytes);
+
       const uploadsDir = path.join(process.cwd(), "public", "uploads");
       await fs.mkdir(uploadsDir, { recursive: true });
 
-      const ext = file.name.endsWith(".png") ? "png" : file.name.endsWith(".webp") ? "webp" : "jpg";
       const filename = `lens-${crypto.randomUUID()}.${ext}`;
       const filepath = path.join(uploadsDir, filename);
       await fs.writeFile(filepath, bytes);
@@ -311,7 +358,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         id: uploadId,
         order_id: orderId,
         storage_path: publicUrl,
-        file_size: file.size,
+        file_size: bytes.length,
         created_at: new Date().toISOString(),
       });
       saveStore(store);
@@ -321,14 +368,18 @@ export async function POST(request: NextRequest, { params }: Params) {
     if (resource === "brand-upload") {
       const form = await request.formData();
       const kind = form.get("kind");
+      if (kind !== "logo" && kind !== "signature") {
+        throw new Error("Invalid brand upload kind. Must be logo or signature.");
+      }
       const file = form.get("file");
       if (!(file instanceof File)) throw new Error("Upload an image file");
 
       const bytes = Buffer.from(await file.arrayBuffer());
+      const ext = validateImageBuffer(bytes);
+
       const uploadsDir = path.join(process.cwd(), "public", "uploads");
       await fs.mkdir(uploadsDir, { recursive: true });
 
-      const ext = file.name.endsWith(".png") ? "png" : file.name.endsWith(".webp") ? "webp" : "jpg";
       const filename = `brand-${kind}-${crypto.randomUUID()}.${ext}`;
       const filepath = path.join(uploadsDir, filename);
       await fs.writeFile(filepath, bytes);
