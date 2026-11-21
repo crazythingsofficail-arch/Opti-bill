@@ -14,6 +14,7 @@ import type {
   Profile,
   PrintData,
   Report,
+  DataRequest,
 } from "./types";
 import { calculateInvoice, financialYear, invoiceNumber } from "./money";
 
@@ -81,6 +82,8 @@ export interface LocalStore {
   uploads: Array<{ id: string; order_id: string; storage_path: string; file_size: number; created_at: string }>;
   drafts: Record<string, any>;
   nextInvoiceSeq: number;
+  members?: Profile[];
+  requests?: DataRequest[];
 }
 
 function initialStore(): LocalStore {
@@ -174,6 +177,8 @@ export function getStore(): LocalStore {
         if (!memoryStore.uploads) memoryStore.uploads = [];
         if (!memoryStore.drafts) memoryStore.drafts = {};
         if (!memoryStore.nextInvoiceSeq) memoryStore.nextInvoiceSeq = 1;
+        if (!memoryStore.members) memoryStore.members = [];
+        if (!memoryStore.requests) memoryStore.requests = [];
         return memoryStore;
       }
     }
@@ -439,9 +444,29 @@ export function getDraft(id: string) {
 // Invoices & Billing
 export function finaliseInvoice(invoiceId: string, key: string, payments: any[]) {
   const store = getStore();
+
+  // Idempotency guard: return existing finalized invoice if already created
+  const existingInv = store.invoices.find((i) => i.id === invoiceId);
+  if (existingInv && existingInv.status === "finalised") {
+    return existingInv.id;
+  }
+
   const draft = store.drafts[invoiceId];
   if (!draft) {
     throw new Error("Draft not found");
+  }
+
+  // Ensure sequence number is strictly higher than any existing invoice
+  const maxExistingSeq = store.invoices.reduce((max, inv) => {
+    if (inv.invoice_no) {
+      const parts = inv.invoice_no.split("/");
+      const last = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(last) && last > max) return last;
+    }
+    return max;
+  }, 0);
+  if (!store.nextInvoiceSeq || store.nextInvoiceSeq <= maxExistingSeq) {
+    store.nextInvoiceSeq = maxExistingSeq + 1;
   }
 
   const now = new Date();
@@ -453,8 +478,13 @@ export function finaliseInvoice(invoiceId: string, key: string, payments: any[])
   const currentTaxes = store.taxes;
   const lines = (draft.items || []).map((l: any) => ({
     ...l,
+    qty: Number(l.qty) || 1,
+    unit_price_paise: Number(l.unit_price_paise) || 0,
+    discount_paise: Number(l.discount_paise) || 0,
     gst_rate_bp:
-      currentTaxes.find((t) => t.id === l.tax_category_id)?.gst_rate_bp ?? 1200,
+      Number(currentTaxes.find((t) => t.id === l.tax_category_id)?.gst_rate_bp) ||
+      Number(l.gst_rate_bp) ||
+      1200,
   }));
 
   const calc = calculateInvoice(
@@ -885,4 +915,294 @@ export function getReportsData(fromStr?: string, toStr?: string): Report {
   ];
 
   return { daily, gst, modes, ageing, products, staff };
+}
+
+export function saveTaxCategory(data: Partial<TaxCategory>, id?: string): string {
+  const store = getStore();
+  const taxId = id || crypto.randomUUID();
+  const existingIdx = store.taxes.findIndex((t) => t.id === taxId);
+  const record: TaxCategory = {
+    id: taxId,
+    name: data.name || "GST Category",
+    hsn_code: data.hsn_code || "9003",
+    gst_rate_bp: Number(data.gst_rate_bp) || 1200,
+    effective_from: data.effective_from || new Date().toISOString().split("T")[0],
+    is_active: data.is_active ?? true,
+  };
+  if (existingIdx >= 0) {
+    store.taxes[existingIdx] = record;
+  } else {
+    store.taxes.unshift(record);
+  }
+  saveStore(store);
+  return taxId;
+}
+
+export function cancelInvoice(invoiceId: string, reason: string, restock = false): void {
+  const store = getStore();
+  const inv = store.invoices.find((i) => i.id === invoiceId);
+  if (!inv) throw new Error("Invoice not found");
+  if (inv.status === "cancelled") throw new Error("Invoice is already cancelled");
+
+  inv.status = "cancelled";
+  inv.display_status = "cancelled";
+  inv.cancel_reason = reason;
+
+  if (restock) {
+    const items = store.invoice_items.filter((it) => it.invoice_id === invoiceId);
+    for (const it of items) {
+      if (it.frame_model_no) {
+        const frame = store.frames.find((f) => f.model_no === it.frame_model_no);
+        if (frame) frame.stock_qty += it.qty || 1;
+      }
+    }
+  }
+  saveStore(store);
+}
+
+export function creditInvoice(invoiceId: string, reason: string, restock = false): string {
+  const store = getStore();
+  const inv = store.invoices.find((i) => i.id === invoiceId);
+  if (!inv) throw new Error("Invoice not found");
+  if (inv.status === "credited") throw new Error("Credit note already issued");
+
+  inv.status = "credited";
+  inv.display_status = "credited";
+  inv.credit_reason = reason;
+
+  const creditNoteId = crypto.randomUUID();
+  const nextSeq = store.invoices.filter((i) => i.type === "credit_note").length + 1;
+  const cnNo = `CN-${String(nextSeq).padStart(4, "0")}`;
+  const now = new Date().toISOString();
+
+  const creditInvoiceRecord: Invoice = {
+    id: creditNoteId,
+    shop_id: inv.shop_id,
+    order_id: inv.order_id,
+    customer_id: inv.customer_id,
+    type: "credit_note",
+    invoice_no: cnNo,
+    financial_year: inv.financial_year,
+    status: "finalised",
+    display_status: "finalised",
+    payment_status: "paid",
+    customer_snapshot: inv.customer_snapshot,
+    shop_snapshot: inv.shop_snapshot,
+    place_of_supply_state_code: inv.place_of_supply_state_code,
+    is_interstate: inv.is_interstate,
+    subtotal: -inv.subtotal,
+    discount_total: -inv.discount_total,
+    taxable_total: -inv.taxable_total,
+    cgst: -inv.cgst,
+    sgst: -inv.sgst,
+    igst: -inv.igst,
+    round_off: -inv.round_off,
+    grand_total: -inv.grand_total,
+    amount_paid: 0,
+    balance_due: 0,
+    refund_due: inv.amount_paid,
+    overall_discount_paise: -inv.overall_discount_paise,
+    draft_version: 1,
+    draft_payments: [],
+    created_at: now,
+    finalised_at: now,
+    original_invoice_id: inv.id,
+    credit_reason: reason,
+    cancel_reason: null,
+  };
+
+  store.invoices.unshift(creditInvoiceRecord);
+
+  // Clone items with negative values
+  const origItems = store.invoice_items.filter((it) => it.invoice_id === invoiceId);
+  for (const it of origItems) {
+    store.invoice_items.push({
+      ...it,
+      id: crypto.randomUUID(),
+      invoice_id: creditNoteId,
+      qty: it.qty,
+      taxable_paise: -it.taxable_paise,
+      cgst_paise: -it.cgst_paise,
+      sgst_paise: -it.sgst_paise,
+      igst_paise: -it.igst_paise,
+    });
+
+    if (restock && it.frame_model_no) {
+      const frame = store.frames.find((f) => f.model_no === it.frame_model_no);
+      if (frame) frame.stock_qty += it.qty || 1;
+    }
+  }
+
+  saveStore(store);
+  return creditNoteId;
+}
+
+export function reversePayment(paymentId: string, reason: string): void {
+  const store = getStore();
+  const p = store.payments.find((pm) => pm.id === paymentId);
+  if (!p) throw new Error("Payment not found");
+
+  const revId = crypto.randomUUID();
+  store.payments.push({
+    id: revId,
+    shop_id: p.shop_id,
+    invoice_id: p.invoice_id,
+    amount_paise: -p.amount_paise,
+    mode: p.mode,
+    reference_no: "Refund / Reversal",
+    reason,
+    reverses_id: p.id,
+    paid_at: new Date().toISOString(),
+  });
+
+  if (p.invoice_id) {
+    const inv = store.invoices.find((i) => i.id === p.invoice_id);
+    if (inv) {
+      inv.amount_paid -= p.amount_paise;
+      inv.balance_due = Math.max(0, inv.grand_total - inv.amount_paid);
+      inv.payment_status =
+        inv.balance_due <= 0 ? "paid" : inv.amount_paid > 0 ? "partial" : "unpaid";
+    }
+  }
+  saveStore(store);
+}
+
+export function removeLensUpload(orderId: string): void {
+  const store = getStore();
+  const upload = store.uploads.find((u) => u.order_id === orderId);
+  if (upload) {
+    store.uploads = store.uploads.filter((u) => u.order_id !== orderId);
+    try {
+      const fullPath = path.join(process.cwd(), "public", upload.storage_path);
+      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    } catch {}
+    saveStore(store);
+  }
+}
+
+export function removeBrandImage(kind: "logo" | "signature"): void {
+  const store = getStore();
+  if (kind === "logo") {
+    store.shop.logo_path = null;
+  } else {
+    store.shop.signature_path = null;
+  }
+  saveStore(store);
+}
+
+export function getMembers(): Profile[] {
+  const store = getStore();
+  const list = [store.profile];
+  if (store.members && Array.isArray(store.members)) {
+    for (const m of store.members) {
+      if (!list.some((existing) => existing.id === m.id)) {
+        list.push(m);
+      }
+    }
+  }
+  return list;
+}
+
+export function saveMember(member: Partial<Profile>, id?: string): Profile {
+  const store = getStore();
+  if (!store.members) store.members = [];
+  const memberId = id || crypto.randomUUID();
+
+  if (id === store.profile.id) {
+    store.profile = {
+      ...store.profile,
+      full_name: member.full_name || store.profile.full_name,
+      role: (member.role as any) || store.profile.role,
+      is_active: member.is_active ?? store.profile.is_active,
+    };
+    saveStore(store);
+    return store.profile;
+  }
+
+  const existingIdx = store.members.findIndex((m) => m.id === memberId);
+  const record: Profile = {
+    id: memberId,
+    shop_id: store.shop.id,
+    full_name: member.full_name || "Team Member",
+    role: (member.role as any) || "staff",
+    is_active: member.is_active ?? true,
+  };
+  if (existingIdx >= 0) {
+    store.members[existingIdx] = record;
+  } else {
+    store.members.push(record);
+  }
+  saveStore(store);
+  return record;
+}
+
+export function getDataRequests(): DataRequest[] {
+  const store = getStore();
+  return store.requests || [];
+}
+
+export function saveDataRequest(req: Partial<DataRequest>): DataRequest {
+  const store = getStore();
+  if (!store.requests) store.requests = [];
+  const record: DataRequest = {
+    id: crypto.randomUUID(),
+    customer_id: req.customer_id || "",
+    type: req.type || "access",
+    status: "open",
+    details: req.details || "",
+    created_at: new Date().toISOString(),
+    handled_at: null,
+  };
+  store.requests.unshift(record);
+  saveStore(store);
+  return record;
+}
+
+export function resolveDataRequest(id: string, status: string, details?: string): void {
+  const store = getStore();
+  if (!store.requests) return;
+  const req = store.requests.find((r) => r.id === id);
+  if (req) {
+    req.status = status;
+    if (details) req.details = `${req.details} | Resolution: ${details}`;
+    req.handled_at = new Date().toISOString();
+    saveStore(store);
+  }
+}
+
+export function eraseCustomerData(requestId: string): void {
+  const store = getStore();
+  if (!store.requests) return;
+  const req = store.requests.find((r) => r.id === requestId);
+  if (!req) throw new Error("Data request not found");
+
+  const cust = store.customers.find((c) => c.id === req.customer_id);
+  if (cust) {
+    cust.name = "Erased Customer";
+    cust.phone = "+910000000000";
+    cust.alt_phone = null;
+    cust.email = null;
+    cust.address = null;
+    cust.city = null;
+    cust.notes = null;
+    cust.anonymised_at = new Date().toISOString();
+  }
+
+  // Clean uploads for customer orders
+  const custOrders = store.orders.filter((o) => o.customer_id === req.customer_id);
+  const custOrderIds = new Set(custOrders.map((o) => o.id));
+  store.uploads = store.uploads.filter((u) => {
+    if (custOrderIds.has(u.order_id)) {
+      try {
+        const p = path.join(process.cwd(), "public", u.storage_path);
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+      } catch {}
+      return false;
+    }
+    return true;
+  });
+
+  req.status = "completed";
+  req.handled_at = new Date().toISOString();
+  saveStore(store);
 }

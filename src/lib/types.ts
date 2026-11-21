@@ -146,7 +146,7 @@ export type Invoice = {
   invoice_no: string | null;
   financial_year?: string;
   type: "tax_invoice" | "bill_of_supply" | "credit_note";
-  status: "draft" | "finalised";
+  status: "draft" | "finalised" | "cancelled" | "credited";
   display_status: string;
   payment_status: string;
   customer_snapshot: Partial<Customer> | null;

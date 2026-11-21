@@ -30,6 +30,18 @@ import {
   getDashboardStats,
   getReportsData,
   loadPrintDataFromStore,
+  saveTaxCategory,
+  cancelInvoice,
+  creditInvoice,
+  reversePayment,
+  removeLensUpload,
+  removeBrandImage,
+  getMembers,
+  saveMember,
+  getDataRequests,
+  saveDataRequest,
+  resolveDataRequest,
+  eraseCustomerData,
   DEFAULT_SHOP,
   DEFAULT_PROFILE,
 } from "@/lib/store";
@@ -128,7 +140,17 @@ export async function GET(request: NextRequest, { params }: Params) {
     const { resource } = await params;
 
     if (resource === "health") {
-      return success({ status: "healthy", timestamp: new Date().toISOString() });
+      const store = getStore();
+      return success({
+        status: "healthy",
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+        store: {
+          readable: true,
+          invoicesCount: store.invoices.length,
+          customersCount: store.customers.length,
+        },
+      });
     }
 
     if (!checkAuth(request)) {
@@ -142,6 +164,25 @@ export async function GET(request: NextRequest, { params }: Params) {
     const query = searchSchema.parse(
       Object.fromEntries(request.nextUrl.searchParams),
     );
+
+    if (resource === "taxes") {
+      const page = query.page || 1;
+      const limit = 50;
+      const start = (page - 1) * limit;
+      return success({
+        rows: store.taxes.slice(start, start + limit),
+        count: store.taxes.length,
+        page,
+      });
+    }
+
+    if (resource === "members") {
+      return success({ rows: getMembers() });
+    }
+
+    if (resource === "requests") {
+      return success({ rows: getDataRequests() });
+    }
 
     if (resource === "context") {
       return success({ profile: store.profile, shop: store.shop });
@@ -492,15 +533,122 @@ export async function POST(request: NextRequest, { params }: Params) {
       return success({ id: rxId });
     }
 
-    if (resource === "frames" || resource === "taxes") {
-      if (resource === "frames") {
-        const raw = z
-          .object({ id: v.uuid.optional(), data: v.frameSchema })
-          .parse(body);
-        const frameId = saveFrame(raw.data, raw.id);
-        return success({ id: frameId });
-      }
-      return success({ id: crypto.randomUUID() });
+    if (resource === "lens-remove") {
+      const p = z.object({ id: z.string() }).parse(body);
+      removeLensUpload(p.id);
+      return success({ ok: true });
+    }
+
+    if (resource === "brand-remove") {
+      const p = z.object({ kind: z.enum(["logo", "signature"]) }).parse(body);
+      removeBrandImage(p.kind);
+      return success({ ok: true });
+    }
+
+    if (resource === "cancel") {
+      const p = z
+        .object({
+          id: z.string(),
+          reason: z.string().default("Cancelled"),
+          restock: z.boolean().optional(),
+        })
+        .parse(body);
+      cancelInvoice(p.id, p.reason, p.restock);
+      return success({ ok: true });
+    }
+
+    if (resource === "credit") {
+      const p = z
+        .object({
+          id: z.string(),
+          reason: z.string().default("Credit note issued"),
+          restock: z.boolean().optional(),
+        })
+        .parse(body);
+      const cnId = creditInvoice(p.id, p.reason, p.restock);
+      return success({ ok: true, id: cnId });
+    }
+
+    if (resource === "reverse") {
+      const p = z
+        .object({
+          id: z.string(),
+          reason: z.string().default("Payment refunded"),
+        })
+        .parse(body);
+      reversePayment(p.id, p.reason);
+      return success({ ok: true });
+    }
+
+    if (resource === "frames") {
+      const raw = z
+        .object({ id: v.uuid.optional(), data: v.frameSchema })
+        .parse(body);
+      const frameId = saveFrame(raw.data, raw.id);
+      return success({ id: frameId });
+    }
+
+    if (resource === "taxes") {
+      const raw = z
+        .object({ id: v.uuid.optional(), data: z.any() })
+        .parse(body);
+      const taxId = saveTaxCategory(raw.data, raw.id);
+      return success({ id: taxId });
+    }
+
+    if (resource === "invite") {
+      const p = z
+        .object({
+          full_name: z.string(),
+          email: z.string().email(),
+          role: z.enum(["owner", "staff", "optometrist"]),
+        })
+        .parse(body);
+      const member = saveMember(p);
+      return success({ ok: true, id: member.id });
+    }
+
+    if (resource === "members") {
+      const p = z
+        .object({
+          id: z.string(),
+          full_name: z.string().optional(),
+          role: z.enum(["owner", "staff", "optometrist"]).optional(),
+          is_active: z.boolean().optional(),
+        })
+        .parse(body);
+      const member = saveMember(p, p.id);
+      return success({ ok: true, id: member.id });
+    }
+
+    if (resource === "requests") {
+      const p = z
+        .object({
+          customer_id: z.string(),
+          type: z.enum(["access", "correction", "erasure"]),
+          details: z.string(),
+        })
+        .parse(body);
+      const req = saveDataRequest(p);
+      return success({ id: req.id });
+    }
+
+    if (resource === "resolve-request") {
+      const p = z
+        .object({
+          id: z.string(),
+          status: z.enum(["completed", "rejected"]),
+          details: z.string().optional(),
+        })
+        .parse(body);
+      resolveDataRequest(p.id, p.status, p.details);
+      return success({ ok: true });
+    }
+
+    if (resource === "erase") {
+      const p = z.object({ id: z.string() }).parse(body);
+      eraseCustomerData(p.id);
+      return success({ ok: true });
     }
 
     if (resource === "draft") {
@@ -539,7 +687,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       return success({ id: paymentId });
     }
 
-    if (resource === "update-order") {
+    if (resource === "update-order" || resource === "orders") {
       const p = z
         .object({
           id: v.uuid,
@@ -557,7 +705,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       const ord = store.orders.find((o) => o.id === p.id);
       if (ord) {
         ord.status = p.status;
-        if (p.lab_name) ord.lab_name = p.lab_name;
+        if (p.lab_name !== undefined) ord.lab_name = p.lab_name;
         if (p.promised_date !== undefined) ord.promised_date = p.promised_date;
         saveStore(store);
       }
@@ -587,30 +735,30 @@ export async function POST(request: NextRequest, { params }: Params) {
       let csv = "";
       if (p.section === "daily") {
         csv =
-          "Day,Taxable (Paise),Tax (Paise),Sales (Paise)\n" +
+          '"Day","Taxable (Paise)","Tax (Paise)","Sales (Paise)"\n' +
           rep.daily
-            .map((d) => `${d.day},${d.taxable},${d.tax},${d.sales}`)
+            .map((d) => `"${d.day}",${d.taxable},${d.tax},${d.sales}`)
             .join("\n");
       } else if (p.section === "gst") {
         csv =
-          "HSN Code,GST Rate (bp),Taxable (Paise),CGST (Paise),SGST (Paise),IGST (Paise)\n" +
+          '"HSN Code","GST Rate (bp)","Taxable (Paise)","CGST (Paise)","SGST (Paise)","IGST (Paise)"\n' +
           rep.gst
             .map(
               (g) =>
-                `${g.hsn_code},${g.gst_rate_bp},${g.taxable},${g.cgst},${g.sgst},${g.igst}`,
+                `"${g.hsn_code}",${g.gst_rate_bp},${g.taxable},${g.cgst},${g.sgst},${g.igst}`,
             )
             .join("\n");
       } else if (p.section === "modes") {
         csv =
-          "Mode,Amount (Paise)\n" +
-          rep.modes.map((m) => `${m.mode},${m.amount}`).join("\n");
+          '"Mode","Amount (Paise)"\n' +
+          rep.modes.map((m) => `"${m.mode.replaceAll('"', '""')}",${m.amount}`).join("\n");
       } else if (p.section === "ageing") {
         csv =
-          "Bucket,Amount (Paise)\n" +
-          rep.ageing.map((a) => `${a.bucket},${a.amount}`).join("\n");
+          '"Bucket","Amount (Paise)"\n' +
+          rep.ageing.map((a) => `"${a.bucket}",${a.amount}`).join("\n");
       } else if (p.section === "products") {
         csv =
-          "Product,Quantity,Sales (Paise)\n" +
+          '"Product","Quantity","Sales (Paise)"\n' +
           rep.products
             .map(
               (pr) =>
@@ -619,7 +767,7 @@ export async function POST(request: NextRequest, { params }: Params) {
             .join("\n");
       } else if (p.section === "staff") {
         csv =
-          "Staff,Sales (Paise)\n" +
+          '"Staff","Sales (Paise)"\n' +
           rep.staff
             .map(
               (st) =>
