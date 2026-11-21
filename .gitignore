@@ -10,5 +10,6 @@ test-results/
 supabase/.temp/
 backups/
 test-artifacts/
+tests/temp_data/
 data/*.bak
 data/*.tmp*

@@ -386,7 +386,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       const bytes = Buffer.from(await file.arrayBuffer());
       const ext = validateImageBuffer(bytes);
 
-      const uploadsDir = path.join(process.cwd(), "public", "uploads");
+      const uploadsDir = process.env.OPTI_UPLOADS_DIR || path.join(process.cwd(), "public", "uploads");
       await fs.mkdir(uploadsDir, { recursive: true });
 
       const filename = `lens-${crypto.randomUUID()}.${ext}`;
@@ -418,7 +418,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       const bytes = Buffer.from(await file.arrayBuffer());
       const ext = validateImageBuffer(bytes);
 
-      const uploadsDir = path.join(process.cwd(), "public", "uploads");
+      const uploadsDir = process.env.OPTI_UPLOADS_DIR || path.join(process.cwd(), "public", "uploads");
       await fs.mkdir(uploadsDir, { recursive: true });
 
       const filename = `brand-${kind}-${crypto.randomUUID()}.${ext}`;

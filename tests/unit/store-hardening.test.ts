@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { getStore, saveStore, resetMemoryStoreForTesting, DEFAULT_SHOP, type LocalStore } from "@/lib/store";
+import { getStore, saveStore, resetMemoryStoreForTesting, DEFAULT_SHOP, getDataDir, getStorePath, getBackupPath, type LocalStore } from "@/lib/store";
 
 describe("BUG-001: Atomic Persistence & Corruption Protection", () => {
-  const dataDir = path.join(process.cwd(), "data");
-  const storePath = path.join(dataDir, "store.json");
-  const backupPath = path.join(dataDir, "store.json.bak");
+  const dataDir = getDataDir();
+  const storePath = getStorePath();
+  const backupPath = getBackupPath();
   let originalStoreContent: string | null = null;
 
   beforeEach(() => {
