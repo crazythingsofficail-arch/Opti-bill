@@ -1,0 +1,283 @@
+# MASTER PROMPT: Opti-X Billing
+# Optical Shop Billing, Prescription and Order Management System (India)
+
+## 0. HOW YOU MUST WORK
+You are a principal full-stack engineer, a product designer and an Indian GST-aware
+domain expert. Follow these rules for the whole project:
+1. Work in the phases listed in section 15. Finish one phase, summarise it, and wait
+   for my "continue" before starting the next.
+2. Before coding, produce: (a) folder structure, (b) full SQL schema, (c) RLS policy
+   list, (d) screen list. Wait for my approval.
+3. No dummy, seed, mock or lorem-ipsum data anywhere in the product. Empty states
+   only. Test fixtures are allowed inside test files only.
+4. Never hardcode tax rates, HSN codes, shop details or legal text. These must come
+   from database settings.
+5. If a requirement is ambiguous, ask me. Do not guess on legal or money logic.
+6. Every phase ends with: what was built, how to run it, how to test it, and known gaps.
+
+## 1. PRODUCT VISION
+Opti-X Billing is a premium, Apple-grade billing and records system for independent
+optical shops in India. A counter staff member must be able to take a walk-in
+customer from "name and phone" to "printed GST invoice with prescription" in under
+2 minutes on a phone or desktop.
+
+Users and roles:
+- Owner: full access, settings, reports, cancel/credit-note, user management, data erasure.
+- Staff: create customers, prescriptions, orders, invoices and payments. Cannot cancel
+  invoices, change settings, export data or delete data.
+- Optometrist (optional role): create and edit prescriptions only.
+
+Primary devices: Android phone (most common), desktop with A4 printer, 80mm thermal printer.
+Languages: English UI. Design the text layer so Kannada and Hindi can be added later (i18n-ready).
+
+## 2. TECH ARCHITECTURE
+- Next.js (App Router, latest stable), TypeScript strict mode, Tailwind CSS.
+- Supabase: Postgres, Auth (email + password), Storage, optional Realtime.
+  Use @supabase/ssr with cookie sessions. Region: Mumbai (ap-south-1).
+- SQL migrations via Supabase CLI in /supabase/migrations. Generate types with
+  `supabase gen types typescript`.
+- Validation: Zod on every form and every server action or route handler.
+- Forms: React Hook Form. Data fetching: server components plus TanStack Query for
+  client interactivity.
+- PDF: server-side generation (React-PDF or Puppeteer-compatible HTML to PDF), plus a
+  CSS @media print layout for browser printing.
+- PWA: installable on phones (manifest, icons, offline shell). Offline = read-only
+  shell; do not queue financial writes offline.
+- Money: store as integer paise. Never use floats. A single money utility handles
+  rounding and formatting (₹ with the Indian digit grouping 1,23,456.00).
+- Env keys: the anon key is used in the browser. The service-role key is used on the
+  server only. Provide .env.example.
+- Error tracking hook (Sentry-ready), structured server logs, and a /health route.
+
+## 3. DESIGN SYSTEM (Apple-style, premium)
+Principles: calm, spacious, content first, one primary action per screen, and motion
+that explains rather than decorates.
+
+Tokens:
+- Font: Roboto only (via next/font). Weights 300, 400, 500, 700. Scale: 12, 14, 16,
+  20, 24, 32, 44. Tight tracking on large headings (-0.02em).
+- Colour (light): background #FFFFFF, surface #F5F5F7, border #E5E5EA, text #0A0A0A,
+  muted text #6E6E73.
+- Colour (dark): background #000000, surface #1C1C1E, border #2C2C2E, text #F5F5F7,
+  muted #98989D.
+- Accent: #FACC15 (yellow). Use it for focus rings, key numbers and small highlights.
+- Signature card: a gradient from #FACC15 (top-left) fading into #111111 (bottom-right).
+  Put text only on the dark region of the gradient, in white, to guarantee WCAG AA
+  contrast. Use signature cards for KPIs (today's sales, pending balance,
+  ready-for-delivery). Normal data cards stay white or surface-grey.
+- Radius: 12 (inputs), 20 (cards), 28 (sheets/modals). Shadows: very soft, layered,
+  never harsh.
+- Glass: nav bars use backdrop blur (saturate 180%, blur 20px) with 70% opacity surface.
+- Motion: 150-250ms ease-out, spring for sheets, respect prefers-reduced-motion.
+- Light and dark mode with a system default and a manual toggle.
+
+Layout:
+- Mobile (<768px): bottom tab bar (Home, Customers, New Bill (centre, prominent),
+  Orders, More), large 48px touch targets, bottom sheets instead of modals, sticky
+  action bar, and a multi-step form with a progress indicator.
+- Tablet/desktop (>=768px): collapsible left sidebar, top bar with global search
+  (Cmd/Ctrl+K command palette), a two-pane layout (list + detail) for Customers and
+  Orders, and keyboard shortcuts (N = new bill, / = search).
+- Components to build once and reuse: Button, Input, Select, Combobox, DatePicker,
+  PhoneInput (+91), Stepper, SegmentedControl, Card, StatCard (signature gradient),
+  DataTable (sortable, paginated, responsive-to-cards on mobile), EmptyState, Toast,
+  BottomSheet, ConfirmDialog, Skeleton loaders, and ImageUploader.
+- Every list has: skeleton loading, empty state with a call to action, and error state with retry.
+- Accessibility: WCAG AA, visible focus, labelled inputs, aria-live for toasts,
+  full keyboard navigation.
+
+## 4. INFORMATION ARCHITECTURE (screens)
+Auth: Login, Forgot password, First-time owner setup (creates shop + owner).
+Main:
+1. Dashboard: KPI signature cards (today's sales, month sales, pending dues, ready
+   for delivery), recent invoices, orders due this week, quick actions.
+2. Customers: list, search (name/phone), profile (details, prescription history with
+   a trend view, orders, invoices, dues, consent record).
+3. New Bill wizard (4 steps), see section 6.
+4. Orders / Job cards: kanban (mobile = tabs) by status: Ordered, Sent to lab, Received
+   from lab, Ready, Delivered. Lab and delivery dates.
+5. Invoices: list with filters (date, status, payment status), invoice detail, print/PDF,
+   record payment, cancel (owner), credit note.
+6. Payments and Dues: outstanding balances, one-tap WhatsApp reminder link.
+7. Inventory (lite): frames catalogue (model no., brand, colour, size, cost, MRP,
+   stock count), optional. A frame number can be typed free-hand or picked from here.
+8. Reports: sales, GST summary (by rate and HSN), payment-mode split, dues ageing,
+   CSV export (owner only).
+9. Settings: Shop profile, GST and tax categories, invoice numbering, print layouts,
+   terms and policies, users and roles, backup and export.
+10. Legal: Privacy Policy, Terms of Use, About and Support.
+
+## 5. DATABASE DESIGN (Supabase Postgres)
+Conventions: uuid primary keys (gen_random_uuid), shop_id on every business table,
+created_at / updated_at (trigger-maintained), created_by, deleted_at (soft delete),
+money in integer paise, citext or lower-case indexes for search.
+
+Tables and key columns:
+- shops: name, legal_name, gstin, pan (optional), address lines, city, state, state_code,
+  pincode, phone, email, logo_path, gst_scheme (regular | composition | unregistered),
+  invoice_prefix, financial_year_start_month (default 4), terms_text, warranty_text,
+  return_policy_text, upi_id, bank details (optional), signature_path.
+- profiles: id (= auth.users.id), shop_id, full_name, role (owner|staff|optometrist), is_active.
+- customers: name, phone (E.164 +91), alt_phone, gender (male|female|other|undisclosed),
+  dob or age_years, email, address, city, notes, consent_given (bool), consent_at,
+  consent_version, anonymised_at. Unique (shop_id, phone) for active rows.
+- prescriptions: customer_id, test_date, examiner_name, source (in_shop|external),
+  for each eye (od_ / os_ prefix): sph, cyl, axis, add_power, prism, base, pd_distance,
+  pd_near, seg_height, va_unaided, va_aided. Plus bin_pd, vertex_distance, pantoscopic_tilt,
+  remarks, valid_until. Constraints: SPH/CYL in -30.00 to +30.00 step 0.25, AXIS 1-180
+  required if CYL is non-zero, ADD 0.25 to 4.00.
+- frames (inventory): sku/model_no, brand, colour, size (eye-bridge-temple), material,
+  type (full rim|half rim|rimless), gender_target, cost_paise, mrp_paise, stock_qty.
+- orders: customer_id, prescription_id, order_no, status, lab_name, lab_sent_at,
+  promised_date, delivered_at, notes.
+- order_items: order_id, item_type (frame|lens|contact_lens|sunglass|accessory|service|other),
+  description, frame_model_no, lens_brand, lens_code, lens_type (single vision|bifocal|
+  progressive|office), lens_material/index, coating(s), tint, qty, unit_price_paise,
+  discount_paise, tax_category_id.
+- uploads: order_id/customer_id, storage_path, mime, size_bytes, kind (lens_photo),
+  uploaded_by. One lens image per order enforced by a unique partial index.
+- tax_categories: name (Frames, Lenses, Sunglasses, Contact Lenses, Accessories,
+  Services), hsn_code, gst_rate_bp (basis points), is_active, effective_from.
+  Rates are rows, not code, and have effective dates so past invoices stay correct.
+- invoices: invoice_no, financial_year, series_seq, type (tax_invoice|bill_of_supply|
+  credit_note), status (draft|finalised|cancelled), customer_id, order_id,
+  customer_snapshot jsonb and shop_snapshot jsonb (frozen at finalisation, so
+  later edits never change old invoices), place_of_supply_state_code, is_interstate,
+  subtotal, discount_total, taxable_total, cgst, sgst, igst, round_off, grand_total
+  (all paise), amount_paid, balance_due, payment_status, finalised_at, cancelled_at,
+  cancel_reason, original_invoice_id (for credit notes).
+- invoice_items: snapshot of each line (description, hsn, qty, rate, discount, taxable
+  value, cgst/sgst/igst rate and amount).
+- payments: invoice_id, amount_paise, mode (cash|upi|card|bank|other), reference_no,
+  paid_at, received_by. Payment rows are append-only; corrections are made with reversing rows.
+- invoice_counters: shop_id, financial_year, prefix, last_seq (atomic increment).
+- audit_logs: actor_id, entity, entity_id, action, old_data, new_data, ip, at.
+  Append-only, with no update or delete allowed for anyone.
+- data_requests: customer_id, type (access|correction|erasure), status, handled_by, handled_at.
+
+Database logic (in SQL, not in the app):
+- next_invoice_no(shop, fy): atomic and gap-free per series, format PREFIX/YY-YY/0001,
+  max 16 characters, only A-Z 0-9 / and -.
+- Trigger: block UPDATE/DELETE on finalised invoices and invoice_items.
+- Trigger: write to audit_logs on invoices, payments, customers, settings and tax_categories.
+- Trigger: recompute amount_paid and balance_due from payments.
+- RPC finalise_invoice(): in one transaction, validate, snapshot, assign the number, lock.
+- RPC erase_customer(): anonymise the personal fields, delete the storage images, keep
+  invoice-required tax data as the law requires, and log the request.
+
+Row Level Security: enabled on every table. Policy pattern: shop_id = (select shop_id
+from profiles where id = auth.uid()). Role checks per action (staff cannot cancel, change
+settings or export). Storage bucket "lens-images" is private, path {shop_id}/{customer_id}/{uuid}.webp,
+with policies mirroring table access. Serve images through signed URLs that expire in 60 seconds.
+
+## 6. NEW BILL WIZARD (core workflow)
+Step 1, Customer: search by phone first. If found, show the profile and last visit. If
+not found, show an inline create form (name, phone, gender, age/DOB). The consent
+checkbox is required for new customers.
+Step 2, Prescription: reuse the latest or add new. Layout is an OD/OS grid with
+steppers in 0.25 increments, +/- sign toggles, auto-formatting (+1.25, -0.75), PD, ADD,
+and remarks. Show warnings for unusual values, never silent changes.
+Step 3, Items: add frame (pick from inventory or type a model number), lens (brand,
+code, type, index, coating), and extras. Upload or capture ONE lens photo (client
+compress to <=300 KB webp, preview, replace/remove). Per-line discount and an
+overall discount (flat or %).
+Step 4, Payment and Review: live totals with GST breakup, advance amount, payment mode
+(split allowed), promised delivery date, order notes. Buttons: Save as Draft, Finalise
+and Print.
+Drafts autosave. Back/forward never loses data. Duplicate-bill guard on double-tap.
+
+## 7. INDIAN GST AND BILLING RULES (configurable, verify with a CA)
+- Tax invoice must carry: supplier name, address, GSTIN; consecutive unique invoice
+  number (<=16 chars, FY-wise series); date; recipient name (and address and state for
+  B2B or when required); HSN per line (digits configurable, 4 or 6); description; qty;
+  unit; taxable value; discount; CGST+SGST for intra-state or IGST for inter-state
+  (decided from place of supply vs shop state); rate and amount of each tax; total in
+  figures AND in words; place of supply; signature block; "Reverse charge: No".
+- Optional customer GSTIN for B2B. Validate the GSTIN format and checksum.
+- Composition or unregistered shops: issue "Bill of Supply", with no tax lines and
+  the mandatory composition declaration text.
+- Tax calculation engine: pure, unit-tested functions. Rounding rule: compute per
+  line, sum, then round the invoice total to the nearest rupee with a visible Round Off line.
+- Discounts reduce the taxable value before tax.
+- Finalised invoices cannot be edited. Corrections go through Cancel (owner, with
+  reason) or Credit Note (linked to the original) and a fresh invoice.
+- The invoice series never reuses or skips numbers except for cancelled ones, which stay visible.
+- Retention: keep invoice and accounting records for the legally required period
+  (GST law requires 6 years); this is configurable and documented in the Privacy Policy.
+- Add an on-screen note in Settings: "Tax rates and HSN codes change. Confirm current
+  rates with your Chartered Accountant or the GST portal before use."
+- Include a feature flag and architecture hooks for e-invoicing (IRN/QR) if the shop
+  crosses the notified turnover limit. Do not implement the IRP integration yet.
+
+## 8. PRINT AND PDF
+Templates, all driven by shop settings, with no hardcoded text:
+1. A4 Tax Invoice: header (logo, name, GSTIN, address), invoice meta, customer block,
+   itemised table with HSN and tax columns, GST summary, amount in words, payment
+   summary (paid/balance), prescription block (OD/OS table), lens photo thumbnail,
+   terms, warranty and return policy, signature, QR for UPI payment of the balance.
+2. A5/Half-page job card for the lab (prescription, frame, lens, tint, due date, no prices).
+3. 80mm thermal receipt (compact, monospace-safe, no image).
+4. Prescription-only slip for the customer.
+Every print footer, exactly: "Made by Mudasir Shariff | opti-x.in | Support: hello@opti-x.in"
+Features: print preview, download PDF, share on WhatsApp (wa.me link with a short
+message and a signed PDF link that expires), and duplicate copy labels ("Original for
+Recipient / Duplicate / Triplicate" option).
+
+## 9. PRIVACY, LEGAL AND SECURITY (no dummy text)
+Privacy Policy and Terms are real pages written for the DPDP Act 2023 and the IT Act.
+Cover: identity of the data fiduciary (the shop), what is collected (identity, contact,
+gender, age, prescription and health-related vision data, photos), purpose limitation,
+lawful basis and consent, storage location (Supabase cloud, Mumbai), retention periods,
+sharing (labs, payment, WhatsApp, only as needed), security safeguards, children's
+data (guardian consent for under-18s), rights (access, correction, erasure, grievance,
+nomination), breach notification, grievance officer contact hello@opti-x.in, and
+versioning with a "last updated" date. Make the shop-specific fields pull from Settings.
+Product rules:
+- Consent captured with timestamp and policy version. Record guardian consent for minors.
+- Data-request workflow: access export (PDF/JSON), correction, and erasure via erase_customer().
+- Security: HTTPS only, secure and httpOnly cookies, CSRF-safe server actions, rate
+  limiting on login, password rules, optional 2FA for the owner, session timeout,
+  security headers (CSP, HSTS, X-Frame-Options), input sanitisation, signed image URLs,
+  secrets only in env, and dependency audit in CI.
+- Never log phone numbers, prescriptions or images in plain logs.
+
+## 10. REPORTS AND EXPORTS
+Daily and monthly sales; GST summary by rate and HSN (matches GSTR-1 style B2C summary);
+payment-mode split; dues ageing (0-7, 8-30, 30+ days); top frames and lens brands;
+staff-wise sales. CSV export (owner only, audit logged).
+
+## 11. PERFORMANCE AND RELIABILITY
+Lighthouse >=90 on mobile. Paginated queries, indexes on (shop_id, phone), (shop_id,
+invoice_no), (shop_id, created_at). Debounced search. Image compression on the client.
+Graceful handling of network drops with retry and clear messages. Idempotency keys for
+invoice finalisation and payment recording.
+
+## 12. BACKUP AND OPERATIONS
+Document: daily automated pg_dump to a private bucket, point-in-time recovery
+(Supabase Pro), restore drill steps, a monthly CSV archive, and a migration rollback plan.
+
+## 13. TESTING AND ACCEPTANCE CRITERIA
+Unit tests: GST maths (intra/inter-state, discount, rounding), invoice number format
+and uniqueness under 50 concurrent requests, GSTIN validation, prescription validation,
+amount in words (Indian system: lakh/crore).
+RLS tests: shop A can never read, write or sign URLs for shop B; staff cannot cancel or export.
+E2E (Playwright): create customer -> prescription -> items -> finalise -> print -> record
+balance payment -> credit note.
+Acceptance: a new bill takes <2 min, works at 360px width, prints cleanly on A4 and
+80mm, every number reconciles to the paisa, and there is zero dummy data in the build.
+
+## 14. BRANDING
+Product name: Opti-X Billing. Footer on every page and every print:
+"Made by Mudasir Shariff | opti-x.in | Support: hello@opti-x.in"
+About and Support page with the same details.
+
+## 15. BUILD PHASES (stop after each and wait for "continue")
+Phase 1: Architecture doc, folder structure, SQL schema, RLS, functions and triggers, design tokens.
+Phase 2: Auth, onboarding (shop + owner), roles, settings, tax categories.
+Phase 3: Customers and prescriptions (with validation and consent).
+Phase 4: New Bill wizard, order items, image upload, drafts.
+Phase 5: GST engine, finalise, payments, cancel and credit notes.
+Phase 6: Print/PDF templates, WhatsApp share.
+Phase 7: Dashboard, reports, exports, inventory-lite.
+Phase 8: Privacy and legal pages, data-request workflow, security hardening.
+Phase 9: Tests, PWA, performance pass, README, deployment guide.
