@@ -19,6 +19,7 @@ import { calculateInvoice, financialYear, invoiceNumber } from "./money";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const STORE_PATH = path.join(DATA_DIR, "store.json");
+const BACKUP_PATH = path.join(DATA_DIR, "store.json.bak");
 
 export const DEFAULT_SHOP: Shop = {
   id: "10000000-0000-4000-8000-000000000001",
@@ -132,8 +133,32 @@ export function getStore(): LocalStore {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
+
+    let raw: string | null = null;
     if (fs.existsSync(STORE_PATH)) {
-      const raw = fs.readFileSync(STORE_PATH, "utf8");
+      try {
+        const candidate = fs.readFileSync(STORE_PATH, "utf8");
+        JSON.parse(candidate);
+        raw = candidate;
+      } catch (err) {
+        console.warn("Primary store corrupted or invalid JSON, attempting backup recovery:", err);
+        raw = null;
+      }
+    }
+
+    if (raw === null && fs.existsSync(BACKUP_PATH)) {
+      try {
+        const candidate = fs.readFileSync(BACKUP_PATH, "utf8");
+        JSON.parse(candidate);
+        raw = candidate;
+        console.info("Recovered store data from backup copy.");
+        fs.writeFileSync(STORE_PATH, raw, "utf8");
+      } catch (err) {
+        console.error("Backup store also corrupted:", err);
+      }
+    }
+
+    if (raw !== null) {
       memoryStore = JSON.parse(raw);
       if (memoryStore) {
         if (!memoryStore.shop) memoryStore.shop = DEFAULT_SHOP;
@@ -153,11 +178,17 @@ export function getStore(): LocalStore {
       }
     }
   } catch (err) {
-    console.warn("Using initial store:", err);
+    console.error("Store load failure:", err);
   }
+
+  if (memoryStore) return memoryStore;
   memoryStore = initialStore();
   saveStore(memoryStore);
   return memoryStore;
+}
+
+export function resetMemoryStoreForTesting(): void {
+  memoryStore = null;
 }
 
 export function saveStore(store: LocalStore): void {
@@ -166,9 +197,31 @@ export function saveStore(store: LocalStore): void {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
-    fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2), "utf8");
+    const jsonStr = JSON.stringify(store, null, 2);
+
+    // 1. Write to atomic temp file first
+    const tempPath = path.join(
+      DATA_DIR,
+      `store.tmp.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`,
+    );
+    fs.writeFileSync(tempPath, jsonStr, "utf8");
+
+    // 2. Maintain backup copy of valid data
+    try {
+      fs.writeFileSync(BACKUP_PATH, jsonStr, "utf8");
+    } catch {}
+
+    // 3. Atomically replace destination
+    try {
+      fs.renameSync(tempPath, STORE_PATH);
+    } catch {
+      fs.copyFileSync(tempPath, STORE_PATH);
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {}
+    }
   } catch (err) {
-    console.error("Failed to write store.json:", err);
+    console.error("Failed to write store.json atomically:", err);
   }
 }
 
