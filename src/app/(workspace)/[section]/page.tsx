@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { Customers, Inventory } from "@/components/records";
 import { Reports } from "@/components/reports";
+import { Support } from "@/components/support";
+import { Legal } from "@/components/legal";
 
 export default async function Page({
   params,
@@ -15,6 +17,14 @@ export default async function Page({
       return <Inventory />;
     case "reports":
       return <Reports />;
+    case "support":
+      return <Support />;
+    case "privacy":
+      return <Legal kind="privacy" />;
+    case "terms":
+      return <Legal kind="terms" />;
+    case "more":
+      return <Legal kind="more" />;
     default:
       notFound();
   }

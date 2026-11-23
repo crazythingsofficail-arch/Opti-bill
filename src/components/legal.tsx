@@ -3,6 +3,7 @@ import Link from "next/link";
 import { renderPolicy } from "@/lib/legal-format";
 import { useWorkspace } from "./providers";
 import { PageTitle, Card, EmptyState } from "./ui";
+import { Support } from "./support";
 import { BRAND_FOOTER } from "@/lib/i18n";
 import { displayDate } from "@/lib/client";
 export function Legal({
@@ -11,36 +12,7 @@ export function Legal({
   kind: "privacy" | "terms" | "support" | "more";
 }) {
   const { shop, profile } = useWorkspace();
-  if (kind === "support")
-    return (
-      <>
-        <PageTitle
-          eyebrow="MADE WITH CARE"
-          title="About Opti-X"
-          description="A thoughtful workspace for independent optical shops."
-        />
-        <Card>
-          <h2>Opti-X Billing</h2>
-          <p className="section-note">
-            Prescriptions, billing, orders and shop records in one place.
-          </p>
-          <p>{BRAND_FOOTER}</p>
-          <div className="actions">
-            <a className="button primary" href="mailto:hello@opti-x.in">
-              Contact support
-            </a>
-            <a
-              className="button secondary"
-              href="https://opti-x.in"
-              target="_blank"
-              rel="noreferrer"
-            >
-              opti-x.in
-            </a>
-          </div>
-        </Card>
-      </>
-    );
+  if (kind === "support") return <Support />;
   if (kind === "more")
     return (
       <>

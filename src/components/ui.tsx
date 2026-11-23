@@ -5,6 +5,7 @@ import {
   useRef,
   useEffect,
   type ReactNode,
+  type CSSProperties,
   type InputHTMLAttributes,
   type ButtonHTMLAttributes,
 } from "react";
@@ -73,11 +74,13 @@ export function PhoneInput(props: InputHTMLAttributes<HTMLInputElement>) {
 export function Card({
   children,
   className = "",
+  style,
 }: {
   children: ReactNode;
   className?: string;
+  style?: CSSProperties;
 }) {
-  return <section className={`card ${className}`}>{children}</section>;
+  return <section className={`card ${className}`} style={style}>{children}</section>;
 }
 export function StatCard({
   label,

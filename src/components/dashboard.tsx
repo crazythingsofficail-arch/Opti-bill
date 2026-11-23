@@ -46,7 +46,7 @@ export function Dashboard({ initial }: { initial?: DashboardData }) {
           month: "long",
         }).format(new Date())}
         title="A little clarity. A better day."
-        description={`Welcome back, ${profile.full_name.split(" ")[0]}. Here’s your shop at a glance.`}
+        description="Welcome back. Here’s your shop at a glance."
         action={
           <Link className="button primary" href="/new-bill">
             <Plus size={17} />

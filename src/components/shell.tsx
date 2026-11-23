@@ -22,6 +22,7 @@ import {
   ArrowUpRight,
   ShieldCheck,
   Command,
+  LifeBuoy,
 } from "lucide-react";
 import { useWorkspace } from "./providers";
 import { BottomSheet, Button, SearchInput, ErrorState } from "./ui";
@@ -34,6 +35,7 @@ const navigation = [
   ["/new-bill", "New Bill", Plus],
   ["/inventory", "Inventory", Glasses],
   ["/reports", "Reports", ChartNoAxesCombined],
+  ["/support", "Support", LifeBuoy],
 ] as const;
 export function Shell({ children }: { children: React.ReactNode }) {
   const { profile, shop } = useWorkspace();
@@ -142,21 +144,27 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <ArrowUpRight size={18} />
           </Link>
           <button
-            className="profile"
+            className="button secondary"
+            style={{
+              width: "100%",
+              justifyContent: "center",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "9px 14px",
+              fontSize: "13px",
+              borderRadius: "8px",
+              cursor: "pointer",
+            }}
+            title="Sign out"
             onClick={() =>
               void api("logout", {}).then(() =>
                 window.location.assign("/login"),
               )
             }
           >
-            <span className="avatar">
-              {profile.full_name.slice(0, 1).toUpperCase()}
-            </span>
-            <span>
-              {profile.full_name}
-              <small>{profile.role}</small>
-            </span>
-            <LogOut size={16} />
+            <LogOut size={15} />
+            <span>Sign out</span>
           </button>
         </div>
       </aside>
@@ -200,6 +208,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <footer className="app-footer">
           {BRAND_FOOTER}
           <span>
+            <Link href="/support">Support</Link> ·{" "}
             <Link href="/privacy">Privacy</Link> ·{" "}
             <Link href="/terms">Terms</Link>
           </span>
