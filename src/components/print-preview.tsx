@@ -237,10 +237,13 @@ export function PrintPreview({
               src={logo}
               alt="Shop logo"
               style={{
-                width: 90,
-                height: 50,
+                maxWidth: 240,
+                maxHeight: 80,
+                width: "auto",
+                height: "auto",
                 objectFit: "contain",
-                marginBottom: 12,
+                marginBottom: 14,
+                borderRadius: 6,
               }}
             />
           )}

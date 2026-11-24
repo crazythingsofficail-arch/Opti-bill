@@ -15,14 +15,19 @@ export function AuthScreen({
   return (
     <div className="auth-layout">
       <section className="auth-story">
-        <div className="brand">
-          <span className="brand-symbol">
-            <Glasses size={26} />
-          </span>
-          <span>
-            opti<span className="brand-x">-x</span>
-            <small>BILLING</small>
-          </span>
+        <div className="brand" style={{ marginBottom: 24 }}>
+          <img
+            src="/logo.png"
+            alt="Opti-X Billing"
+            style={{
+              height: 48,
+              width: "auto",
+              maxWidth: 220,
+              objectFit: "contain",
+              borderRadius: 10,
+              display: "block",
+            }}
+          />
         </div>
         <div className="auth-mark" aria-hidden />
         <h1>

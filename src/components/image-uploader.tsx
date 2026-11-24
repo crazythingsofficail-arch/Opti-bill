@@ -164,6 +164,22 @@ export function BrandUploader({
         {configured ? "An image is configured." : "No image configured."} Old
         invoice copies retain their original branding.
       </p>
+      {configured && kind === "logo" && (
+        <div style={{ margin: "12px 0" }}>
+          <img
+            src="/logo.png"
+            alt="Configured logo"
+            style={{
+              height: 44,
+              maxWidth: 160,
+              objectFit: "contain",
+              borderRadius: 6,
+              border: "1px solid var(--border, #e2e8f0)",
+              padding: 3,
+            }}
+          />
+        </div>
+      )}
       <input
         ref={input}
         type="file"

@@ -64,7 +64,7 @@ export const DEFAULT_SHOP: Shop = {
   bank_details: "HDFC Bank, A/C: 50200012345678, IFSC: HDFC0001234",
   einvoice_enabled: false,
   require_owner_mfa: false,
-  logo_path: null,
+  logo_path: "/logo.png",
   signature_path: null,
 };
 

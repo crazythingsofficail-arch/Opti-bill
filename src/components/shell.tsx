@@ -111,14 +111,30 @@ export function Shell({ children }: { children: React.ReactNode }) {
         Skip to content
       </a>
       <aside className="sidebar">
-        <Link href="/" className="brand">
-          <span className="brand-symbol">
-            <Glasses size={26} />
-          </span>
-          <span>
-            opti<span className="brand-x">-x</span>
-            <small>BILLING</small>
-          </span>
+        <Link
+          href="/"
+          className="brand"
+          title="Opti-X Billing"
+          style={{
+            padding: 0,
+            textDecoration: "none",
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          <img
+            src="/logo.png"
+            alt="Opti-X Billing"
+            style={{
+              height: 38,
+              width: "auto",
+              maxWidth: collapsed ? 38 : 172,
+              objectFit: collapsed ? "cover" : "contain",
+              objectPosition: "left center",
+              borderRadius: 8,
+              display: "block",
+            }}
+          />
         </Link>
         <p className="sidebar-label">WORKSPACE</p>
         <nav>

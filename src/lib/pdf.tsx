@@ -335,8 +335,8 @@ export async function renderInvoicePdf(
             <Image
               src={pdfLogo}
               style={{
-                width: 60,
-                height: 40,
+                width: 150,
+                height: 50,
                 objectFit: "contain",
                 marginBottom: 10,
               }}
