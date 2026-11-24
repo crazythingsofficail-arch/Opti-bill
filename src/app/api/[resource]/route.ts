@@ -214,31 +214,10 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     if (resource === "customer-detail") {
       if (!query.id) throw new Error("Customer ID required");
-      const customer = getCustomer(query.id) || {
-        id: query.id,
-        shop_id: store.shop.id,
-        name: "Customer",
-        phone: "+919876543210",
-        alt_phone: null,
-        gender: "other",
-        dob: null,
-        age_years: 30,
-        email: null,
-        address: null,
-        city: null,
-        state_code: store.shop.state_code,
-        gstin: null,
-        notes: null,
-        consent_given: true,
-        consent_at: new Date().toISOString(),
-        consent_version: "v1",
-        guardian_name: null,
-        guardian_phone: null,
-        guardian_consent: false,
-        guardian_verification: null,
-        created_at: new Date().toISOString(),
-        anonymised_at: null,
-      };
+      const customer = getCustomer(query.id);
+      if (!customer) {
+        return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+      }
 
       const prescriptions = getPrescriptionsForCustomer(query.id);
       const invoices = store.invoices.filter((i) => i.customer_id === query.id);
