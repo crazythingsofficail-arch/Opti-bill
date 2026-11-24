@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Plus, ArrowUpRight } from "lucide-react";
 import { api, displayDate } from "@/lib/client";
 import { formatMoney } from "@/lib/money";
-import type { Customer, Invoice, Frame, Order } from "@/lib/types";
+import type { Customer, Invoice, Frame, Lens, Order } from "@/lib/types";
 import {
   Button,
   PageTitle,
@@ -519,32 +519,139 @@ const frameFields: FormField[] = [
     min: 0,
   },
 ];
+
+const lensFields: FormField[] = [
+  { name: "lens_code", label: "Lens Code / SKU", required: true, hint: "e.g. ES-CRIZ-156, BB-SV-160" },
+  { name: "brand", label: "Brand / Manufacturer", required: true, hint: "e.g. Essilor, Zeiss, Crizal, Hoya, Nova, Opti-X" },
+  { name: "name", label: "Product Name / Model", required: true, hint: "e.g. Crizal Prevencia, Blue Defense SV" },
+  {
+    name: "lens_type",
+    label: "Lens Type / Design",
+    type: "select",
+    options: ["single vision", "bifocal", "progressive", "office / computer"],
+    required: true,
+  },
+  {
+    name: "lens_index",
+    label: "Refractive Index / Material",
+    type: "select",
+    options: [
+      "1.50 Standard",
+      "1.56 Thin",
+      "1.59 Polycarbonate",
+      "1.60 Extra Thin",
+      "1.67 Ultra Thin",
+      "1.74 High Index",
+      "Trivex",
+      "Mineral Glass",
+    ],
+    required: true,
+  },
+  {
+    name: "coatings",
+    label: "Coatings",
+    type: "select",
+    options: [
+      "Anti-Glare (ARC)",
+      "Blue Cut / Computer",
+      "Hard Coat (Scratch Resistant)",
+      "Hydrophobic / Dust Resistant",
+      "Super Hydrophobic",
+      "UV400 Protection",
+    ],
+  },
+  {
+    name: "tint",
+    label: "Tint / Treatment",
+    type: "select",
+    options: [
+      "Clear",
+      "Photochromic / Transitions (Grey)",
+      "Photochromic / Transitions (Brown)",
+      "Polarized (Grey)",
+      "Polarized (Brown)",
+      "Tinted (Sun)",
+    ],
+  },
+  { name: "dia_mm", label: "Diameter (mm)", hint: "e.g. 65, 70, 75" },
+  { name: "sph_range", label: "Sphere (SPH) Range", hint: "e.g. -6.00 to +4.00 D" },
+  { name: "cyl_range", label: "Cylinder (CYL) Range", hint: "e.g. 0.00 to -2.00 D" },
+  { name: "cost_paise", label: "Cost Price (₹)", type: "money", required: true },
+  { name: "mrp_paise", label: "MRP / Selling Price (₹)", type: "money", required: true },
+  {
+    name: "stock_qty",
+    label: "Stock Quantity (pairs)",
+    type: "number",
+    required: true,
+    min: 0,
+  },
+  { name: "hsn_code", label: "HSN Code", hint: "Default 9001 for ophthalmic lenses" },
+];
+
 export function Inventory() {
   const { profile } = useWorkspace();
   const toast = useToast();
-  const [q, setQ] = useState(""),
-    [page, setPage] = useState(1),
-    [editing, setEditing] = useState<Frame | true | null>(null);
+  const [tab, setTab] = useState<string>("Frames");
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [editingFrame, setEditingFrame] = useState<Frame | true | null>(null);
+  const [editingLens, setEditingLens] = useState<Lens | true | null>(null);
+
   const search = useSearch(q);
-  const result = useList<Frame>(
+
+  const framesResult = useList<Frame>(
     "frames",
     new URLSearchParams({ q: search, page: String(page) }).toString(),
   );
+
+  const lensesResult = useList<Lens>(
+    "lenses",
+    new URLSearchParams({ q: search, page: String(page) }).toString(),
+  );
+
+  const isLenses = tab === "Optical Lenses";
+  const activeResult = isLenses ? lensesResult : framesResult;
+
   return (
     <>
       <PageTitle
-        eyebrow="THE COLLECTION"
-        title="Frames inventory"
-        description="Know what’s in stock. Find the right frame faster."
+        eyebrow="INVENTORY MANAGEMENT"
+        title={isLenses ? "Optical Lenses" : "Frames & Eyewear"}
+        description={
+          isLenses
+            ? "Manage prescription lens inventory, coatings, refractive indices, and stock levels."
+            : "Know what’s in stock. Find the right frame faster."
+        }
         action={
           profile.role === "owner" && (
-            <Button onClick={() => setEditing(true)}>
+            <Button
+              onClick={() => {
+                if (isLenses) {
+                  setEditingLens(true);
+                } else {
+                  setEditingFrame(true);
+                }
+              }}
+            >
               <Plus size={16} />
-              Add frame
+              {isLenses ? "Add lens" : "Add frame"}
             </Button>
           )
         }
       />
+
+      <div style={{ marginBottom: 18 }}>
+        <SegmentedControl
+          values={["Frames", "Optical Lenses"]}
+          value={tab}
+          onChange={(v) => {
+            setTab(v);
+            setQ("");
+            setPage(1);
+          }}
+        />
+      </div>
+
       <Card>
         <div className="filters">
           <SearchInput
@@ -553,20 +660,25 @@ export function Inventory() {
               setQ(v);
               setPage(1);
             }}
-            label="Search model or brand"
+            label={
+              isLenses
+                ? "Search lens code, brand, name or index"
+                : "Search model or brand"
+            }
           />
         </div>
-        {result.isPending ? (
+
+        {activeResult.isPending ? (
           <Skeleton />
-        ) : result.error ? (
+        ) : activeResult.error ? (
           <ErrorState
-            error={result.error}
-            retry={() => void result.refetch()}
+            error={activeResult.error}
+            retry={() => void activeResult.refetch()}
           />
-        ) : (
+        ) : !isLenses ? (
           <>
             <DataTable
-              rows={result.data?.rows || []}
+              rows={framesResult.data?.rows || []}
               rowKey={(f) => f.id}
               columns={[
                 {
@@ -600,45 +712,187 @@ export function Inventory() {
                 },
                 ...(profile.role === "owner"
                   ? [
-                    {
-                      key: "edit",
-                      label: "",
-                      render: (f: Frame) => (
-                        <Button variant="ghost" onClick={() => setEditing(f)}>
-                          Edit
-                        </Button>
-                      ),
-                    },
-                  ]
+                      {
+                        key: "edit",
+                        label: "",
+                        render: (f: Frame) => (
+                          <Button variant="ghost" onClick={() => setEditingFrame(f)}>
+                            Edit
+                          </Button>
+                        ),
+                      },
+                    ]
                   : []),
               ]}
             />
             <Pager
-              count={result.data?.count || 0}
+              count={framesResult.data?.count || 0}
+              page={page}
+              onPage={setPage}
+            />
+          </>
+        ) : (
+          <>
+            <DataTable
+              rows={lensesResult.data?.rows || []}
+              rowKey={(l) => l.id}
+              columns={[
+                {
+                  key: "code",
+                  label: "Code & Brand",
+                  render: (l) => (
+                    <strong>
+                      {l.lens_code}
+                      <small>{l.brand}</small>
+                    </strong>
+                  ),
+                  sort: (l) => l.lens_code,
+                },
+                {
+                  key: "name",
+                  label: "Product Name",
+                  render: (l) => (
+                    <div>
+                      <span style={{ fontWeight: 500 }}>{l.name}</span>
+                      {(l.sph_range || l.dia_mm) && (
+                        <small
+                          className="muted"
+                          style={{ display: "block", fontSize: 11 }}
+                        >
+                          {[
+                            l.sph_range ? `SPH ${l.sph_range}` : null,
+                            l.cyl_range ? `CYL ${l.cyl_range}` : null,
+                            l.dia_mm ? `${l.dia_mm}mm` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </small>
+                      )}
+                    </div>
+                  ),
+                  sort: (l) => l.name,
+                },
+                {
+                  key: "type",
+                  label: "Design & Index",
+                  render: (l) => (
+                    <div>
+                      <span style={{ textTransform: "capitalize" }}>
+                        {l.lens_type}
+                      </span>
+                      <small
+                        className="muted"
+                        style={{ display: "block", fontSize: 11 }}
+                      >
+                        {l.lens_index}
+                      </small>
+                    </div>
+                  ),
+                  sort: (l) => l.lens_type,
+                },
+                {
+                  key: "coatings",
+                  label: "Coatings & Tint",
+                  render: (l) => (
+                    <small style={{ fontSize: 12 }}>
+                      {[
+                        l.coatings,
+                        l.tint && l.tint !== "Clear" ? l.tint : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </small>
+                  ),
+                },
+                {
+                  key: "price",
+                  label: "MRP",
+                  render: (l) => formatMoney(l.mrp_paise),
+                  sort: (l) => l.mrp_paise,
+                },
+                {
+                  key: "stock",
+                  label: "In stock",
+                  render: (l) => (
+                    <Badge>
+                      {l.stock_qty <= 2 ? (
+                        <span style={{ color: "#ef4444", fontWeight: 600 }}>
+                          {l.stock_qty} (low)
+                        </span>
+                      ) : (
+                        `${l.stock_qty} pairs`
+                      )}
+                    </Badge>
+                  ),
+                  sort: (l) => l.stock_qty,
+                },
+                ...(profile.role === "owner"
+                  ? [
+                      {
+                        key: "edit",
+                        label: "",
+                        render: (l: Lens) => (
+                          <Button variant="ghost" onClick={() => setEditingLens(l)}>
+                            Edit
+                          </Button>
+                        ),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+            <Pager
+              count={lensesResult.data?.count || 0}
               page={page}
               onPage={setPage}
             />
           </>
         )}
       </Card>
+
+      {/* Frame Edit Modal */}
       <BottomSheet
-        open={!!editing}
-        onClose={() => setEditing(null)}
-        title={editing === true ? "Add frame" : "Edit frame"}
+        open={!!editingFrame}
+        onClose={() => setEditingFrame(null)}
+        title={editingFrame === true ? "Add frame" : "Edit frame"}
       >
-        {editing && (
+        {editingFrame && (
           <Editor
-            key={editing === true ? "new" : editing.id}
+            key={editingFrame === true ? "new-frame" : editingFrame.id}
             fields={frameFields}
-            initial={editing === true ? {} : editing}
+            initial={editingFrame === true ? {} : editingFrame}
             onSave={async (data) => {
               await api("frames", {
-                id: editing === true ? undefined : editing?.id,
+                id: editingFrame === true ? undefined : editingFrame?.id,
                 data,
               });
-              setEditing(null);
+              setEditingFrame(null);
               toast("Frame saved");
-              void result.refetch();
+              void framesResult.refetch();
+            }}
+          />
+        )}
+      </BottomSheet>
+
+      {/* Lens Edit Modal */}
+      <BottomSheet
+        open={!!editingLens}
+        onClose={() => setEditingLens(null)}
+        title={editingLens === true ? "Add optical lens" : "Edit optical lens"}
+      >
+        {editingLens && (
+          <Editor
+            key={editingLens === true ? "new-lens" : editingLens.id}
+            fields={lensFields}
+            initial={editingLens === true ? {} : editingLens}
+            onSave={async (data) => {
+              await api("lenses", {
+                id: editingLens === true ? undefined : editingLens?.id,
+                data,
+              });
+              setEditingLens(null);
+              toast("Optical lens saved");
+              void lensesResult.refetch();
             }}
           />
         )}

@@ -5,6 +5,7 @@ import type {
   Customer,
   Prescription,
   Frame,
+  Lens,
   TaxCategory,
   Invoice,
   InvoiceItem,
@@ -82,6 +83,7 @@ export interface LocalStore {
   customers: Customer[];
   prescriptions: Prescription[];
   frames: Frame[];
+  lenses: Lens[];
   taxes: TaxCategory[];
   invoices: Invoice[];
   invoice_items: InvoiceItem[];
@@ -101,6 +103,7 @@ function initialStore(): LocalStore {
     customers: [],
     prescriptions: [],
     frames: [],
+    lenses: [],
     taxes: [
       {
         id: "10000000-0000-4000-8000-000000000010",
@@ -181,6 +184,7 @@ export function getStore(): LocalStore {
         if (!memoryStore.customers) memoryStore.customers = [];
         if (!memoryStore.prescriptions) memoryStore.prescriptions = [];
         if (!memoryStore.frames) memoryStore.frames = [];
+        if (!memoryStore.lenses) memoryStore.lenses = [];
         if (!memoryStore.taxes || !memoryStore.taxes.length) memoryStore.taxes = initialStore().taxes;
         if (!memoryStore.invoices) memoryStore.invoices = [];
         if (!memoryStore.invoice_items) memoryStore.invoice_items = [];
@@ -433,6 +437,66 @@ export function searchFrames(q: string, page = 1, limit = 50) {
   return { rows, count, page };
 }
 
+export function saveLens(data: any, id?: string | null): string {
+  const store = getStore();
+  const lensId = id || crypto.randomUUID();
+  const existingIdx = store.lenses.findIndex((l) => l.id === lensId);
+
+  const lensRecord: Lens = {
+    id: lensId,
+    lens_code: data.lens_code || "OX-LENS",
+    brand: data.brand || "Opti-X",
+    name: data.name || "Single Vision",
+    lens_type: data.lens_type || "single vision",
+    lens_index: data.lens_index || "1.56 Thin",
+    coatings: data.coatings || "Anti-Glare (ARC)",
+    tint: data.tint || "Clear",
+    dia_mm: data.dia_mm || "",
+    sph_range: data.sph_range || "",
+    cyl_range: data.cyl_range || "",
+    cost_paise: Number(data.cost_paise) || 0,
+    mrp_paise: Number(data.mrp_paise) || 0,
+    stock_qty: Number(data.stock_qty) || 0,
+    hsn_code: data.hsn_code || "9001",
+    is_active: data.is_active !== false,
+  };
+
+  if (existingIdx >= 0) {
+    store.lenses[existingIdx] = lensRecord;
+  } else {
+    store.lenses.unshift(lensRecord);
+  }
+  saveStore(store);
+  return lensId;
+}
+
+export function searchLenses(q: string, page = 1, limit = 50) {
+  const store = getStore();
+  const query = q.trim().toLowerCase();
+  let list = store.lenses || [];
+  if (query) {
+    list = list.filter(
+      (l) =>
+        (l.lens_code && l.lens_code.toLowerCase().includes(query)) ||
+        (l.brand && l.brand.toLowerCase().includes(query)) ||
+        (l.name && l.name.toLowerCase().includes(query)) ||
+        (l.lens_type && l.lens_type.toLowerCase().includes(query)) ||
+        (l.lens_index && l.lens_index.toLowerCase().includes(query)) ||
+        (l.coatings && l.coatings.toLowerCase().includes(query)),
+    );
+  }
+  const count = list.length;
+  const start = (page - 1) * limit;
+  const rows = list.slice(start, start + limit);
+  return { rows, count, page };
+}
+
+export function deleteLens(id: string): void {
+  const store = getStore();
+  store.lenses = (store.lenses || []).filter((l) => l.id !== id);
+  saveStore(store);
+}
+
 // Drafts
 export function saveDraft(id: string, draft: any) {
   const store = getStore();
@@ -631,6 +695,18 @@ export function finaliseInvoice(invoiceId: string, key: string, payments: any[])
       const fr = store.frames.find((f) => f.id === item.frame_id);
       if (fr) {
         fr.stock_qty = Math.max(0, fr.stock_qty - (item.qty || 1));
+      }
+    }
+    // Deduct lens stock
+    if (store.lenses) {
+      if (item.lens_id) {
+        const ln = store.lenses.find((l) => l.id === item.lens_id);
+        if (ln) ln.stock_qty = Math.max(0, ln.stock_qty - (item.qty || 1));
+      } else if (item.lens_code) {
+        const ln = store.lenses.find(
+          (l) => l.lens_code.toLowerCase() === item.lens_code.toLowerCase(),
+        );
+        if (ln) ln.stock_qty = Math.max(0, ln.stock_qty - (item.qty || 1));
       }
     }
   }
@@ -1012,6 +1088,12 @@ export function cancelInvoice(invoiceId: string, reason: string, restock = false
         const frame = store.frames.find((f) => f.model_no === it.frame_model_no);
         if (frame) frame.stock_qty += it.qty || 1;
       }
+      if (it.lens_code || (it as any).lens_id) {
+        const lens = (store.lenses || []).find(
+          (l) => l.id === (it as any).lens_id || l.lens_code === it.lens_code,
+        );
+        if (lens) lens.stock_qty += it.qty || 1;
+      }
     }
   }
   saveStore(store);
@@ -1087,6 +1169,12 @@ export function creditInvoice(invoiceId: string, reason: string, restock = false
     if (restock && it.frame_model_no) {
       const frame = store.frames.find((f) => f.model_no === it.frame_model_no);
       if (frame) frame.stock_qty += it.qty || 1;
+    }
+    if (restock && (it.lens_code || (it as any).lens_id)) {
+      const lens = (store.lenses || []).find(
+        (l) => l.id === (it as any).lens_id || l.lens_code === it.lens_code,
+      );
+      if (lens) lens.stock_qty += it.qty || 1;
     }
   }
 

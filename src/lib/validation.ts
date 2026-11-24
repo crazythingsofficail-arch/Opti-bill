@@ -320,6 +320,27 @@ export const frameSchema = z.object({
   mrp_paise: money,
   stock_qty: z.number().int().min(0).max(1000000),
 });
+export const lensSchema = z.object({
+  lens_code: z.string().min(1).max(100),
+  brand: z.string().min(1).max(100),
+  name: text,
+  lens_type: z.enum([
+    "single vision",
+    "bifocal",
+    "progressive",
+    "office / computer",
+  ]),
+  lens_index: z.string().min(1).max(50),
+  coatings: text.nullish().transform((v) => v || "Anti-Glare (ARC)"),
+  tint: text.nullish().transform((v) => v || "Clear"),
+  dia_mm: text.nullish().transform((v) => v || ""),
+  sph_range: text.nullish().transform((v) => v || ""),
+  cyl_range: text.nullish().transform((v) => v || ""),
+  cost_paise: money.nullish().transform((v) => v ?? 0),
+  mrp_paise: money,
+  stock_qty: z.number().int().min(0).max(1000000),
+  hsn_code: text.nullish().transform((v) => v || "9001"),
+});
 export const itemSchema = z
   .object({
     item_type: z.enum([
@@ -334,6 +355,7 @@ export const itemSchema = z
     description: z.string().min(1).max(500),
     frame_id: uuid.nullish(),
     frame_model_no: optionalText,
+    lens_id: uuid.nullish(),
     lens_brand: optionalText,
     lens_code: optionalText,
     lens_type: optionalText,

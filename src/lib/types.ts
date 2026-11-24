@@ -105,6 +105,24 @@ export type Frame = {
   mrp_paise: number;
   stock_qty: number;
 };
+export type Lens = {
+  id: string;
+  lens_code: string;
+  brand: string;
+  name: string;
+  lens_type: string;
+  lens_index: string;
+  coatings: string;
+  tint: string;
+  dia_mm?: string | null;
+  sph_range?: string | null;
+  cyl_range?: string | null;
+  cost_paise: number;
+  mrp_paise: number;
+  stock_qty: number;
+  hsn_code?: string;
+  is_active?: boolean;
+};
 export type Order = {
   id: string;
   shop_id?: string;
@@ -126,6 +144,7 @@ export type OrderItem = {
   description: string;
   frame_id?: string | null;
   frame_model_no: string;
+  lens_id?: string | null;
   lens_brand: string;
   lens_code: string;
   lens_type: string;
@@ -187,6 +206,8 @@ export type InvoiceItem = {
   item_type: string;
   specs?: Record<string, string | null>;
   frame_model_no: string | null;
+  lens_id?: string | null;
+  lens_code?: string | null;
   lens_brand: string | null;
   hsn_code: string;
   qty: number;

@@ -22,6 +22,9 @@ import {
   getPrescriptionsForCustomer,
   saveFrame,
   searchFrames,
+  saveLens,
+  searchLenses,
+  deleteLens,
   saveDraft,
   getDraft,
   finaliseInvoice,
@@ -133,6 +136,7 @@ const searchSchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   filter: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
 });
 
 export async function GET(request: NextRequest, { params }: Params) {
@@ -251,6 +255,12 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     if (resource === "frames" || resource === "inventory") {
       return success(searchFrames(query.q, query.page));
+    }
+
+    if (resource === "lenses") {
+      return success(
+        searchLenses(query.q, query.page, query.limit || 50),
+      );
     }
 
     if (resource === "invoices") {
@@ -586,6 +596,20 @@ export async function POST(request: NextRequest, { params }: Params) {
         .parse(body);
       const frameId = saveFrame(raw.data, raw.id);
       return success({ id: frameId });
+    }
+
+    if (resource === "lenses") {
+      const raw = z
+        .object({ id: v.uuid.optional(), data: v.lensSchema })
+        .parse(body);
+      const lensId = saveLens(raw.data, raw.id);
+      return success({ id: lensId });
+    }
+
+    if (resource === "lens-delete") {
+      const raw = z.object({ id: v.uuid }).parse(body);
+      deleteLens(raw.id);
+      return success({ ok: true });
     }
 
     if (resource === "taxes") {

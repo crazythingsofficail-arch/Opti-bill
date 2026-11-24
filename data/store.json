@@ -46,6 +46,7 @@
   "customers": [],
   "prescriptions": [],
   "frames": [],
+  "lenses": [],
   "taxes": [
     {
       "id": "420ef23a-c2f6-4920-aeee-cff5a566abe2",

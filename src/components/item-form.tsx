@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { parseMoney } from "@/lib/money";
 import { itemSchema } from "@/lib/validation";
-import type { Frame, TaxCategory, OrderItem } from "@/lib/types";
+import type { Frame, Lens, TaxCategory, OrderItem } from "@/lib/types";
 import { Button, Field, Input, SegmentedControl } from "./ui";
 
 const MODES = ["Frame + Lens", "Frame only", "Lens only", "Other item"];
@@ -34,12 +34,14 @@ const TINT_LIST = [
 
 export function DynamicItemForm({
   frames,
+  lenses = [],
   taxes,
   onAdd,
   onClose,
   initialTab,
 }: {
   frames: Frame[];
+  lenses?: Lens[];
   taxes: TaxCategory[];
   onAdd: (items: OrderItem[]) => void;
   onClose: () => void;
@@ -61,6 +63,7 @@ export function DynamicItemForm({
   const [frameDiscount, setFrameDiscount] = useState("0");
 
   // Lens fields
+  const [lensId, setLensId] = useState("");
   const [lensBrand, setLensBrand] = useState("");
   const [lensCode, setLensCode] = useState("");
   const [lensType, setLensType] = useState("single vision");
@@ -70,6 +73,20 @@ export function DynamicItemForm({
   const [lensPrice, setLensPrice] = useState("");
   const [lensQty, setLensQty] = useState(1);
   const [lensDiscount, setLensDiscount] = useState("0");
+
+  function handleSelectLens(id: string) {
+    setLensId(id);
+    const l = lenses.find((x) => x.id === id);
+    if (l) {
+      setLensBrand(l.brand || "");
+      setLensCode(l.lens_code || "");
+      if (l.lens_type) setLensType(l.lens_type);
+      if (l.lens_index) setLensIndex(l.lens_index);
+      if (l.coatings) setCoatings(l.coatings);
+      if (l.tint) setTint(l.tint);
+      setLensPrice(String(l.mrp_paise / 100));
+    }
+  }
 
   // Other item fields
   const [otherType, setOtherType] = useState("sunglass");
@@ -123,6 +140,7 @@ export function DynamicItemForm({
         const item = itemSchema.parse({
           item_type: "lens",
           description: desc,
+          lens_id: lensId || null,
           lens_brand: lensBrand || null,
           lens_code: lensCode || null,
           lens_type: lensType || null,
@@ -171,6 +189,7 @@ export function DynamicItemForm({
             itemSchema.parse({
               item_type: "lens",
               description: lDesc,
+              lens_id: lensId || null,
               lens_brand: lensBrand || null,
               lens_code: lensCode || null,
               lens_type: lensType || null,
@@ -308,6 +327,24 @@ export function DynamicItemForm({
       {/* MODE 2: LENS ONLY */}
       {activeTab === "Lens only" && (
         <div className="form-grid">
+          {lenses && lenses.length > 0 && (
+            <div className="wide">
+              <Field label="Select lens from inventory (optional)">
+                <select
+                  value={lensId}
+                  onChange={(e) => handleSelectLens(e.target.value)}
+                >
+                  <option value="">Enter lens details manually</option>
+                  {lenses.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.brand ? `${l.brand} - ` : ""}
+                      {l.lens_code} ({l.name}) · ₹{l.mrp_paise / 100} ({l.stock_qty} in stock)
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          )}
           <Field label="Lens brand">
             <Input
               value={lensBrand}
@@ -467,6 +504,24 @@ export function DynamicItemForm({
               2. Lens Specifications
             </h3>
             <div className="form-grid">
+              {lenses && lenses.length > 0 && (
+                <div className="wide">
+                  <Field label="Select lens from inventory (optional)">
+                    <select
+                      value={lensId}
+                      onChange={(e) => handleSelectLens(e.target.value)}
+                    >
+                      <option value="">Enter lens details manually</option>
+                      {lenses.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.brand ? `${l.brand} - ` : ""}
+                          {l.lens_code} ({l.name}) · ₹{l.mrp_paise / 100} ({l.stock_qty} in stock)
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+              )}
               <Field label="Lens brand">
                 <Input
                   value={lensBrand}

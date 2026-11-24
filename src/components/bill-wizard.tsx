@@ -18,6 +18,7 @@ import type {
   Prescription,
   TaxCategory,
   Frame,
+  Lens,
   OrderItem,
   Invoice,
   Order,
@@ -128,6 +129,10 @@ export function BillWizard() {
   const frames = useQuery({
     queryKey: ["bill-frames"],
     queryFn: () => api<{ rows: Frame[] }>("frames"),
+  });
+  const lenses = useQuery({
+    queryKey: ["bill-lenses"],
+    queryFn: () => api<{ rows: Lens[] }>("lenses"),
   });
   const currentTaxes = (taxes.data?.rows || [])
     .filter((t) => t.is_active && t.effective_from <= today())
@@ -917,6 +922,7 @@ export function BillWizard() {
       >
         <DynamicItemForm
           frames={frames.data?.rows || []}
+          lenses={lenses.data?.rows || []}
           taxes={currentTaxes}
           initialTab={initialItemTab}
           onAdd={(newItems) => {
