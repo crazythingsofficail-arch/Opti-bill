@@ -366,7 +366,10 @@ export function BillWizard() {
                         key={c.id}
                         className="list-choice"
                         aria-pressed={values.customer_id === c.id}
-                        onClick={() => void selectCustomer(c)}
+                        onClick={async () => {
+                          await selectCustomer(c);
+                          setStep(1);
+                        }}
                       >
                         <span>
                           <strong>{c.name}</strong>
@@ -379,17 +382,30 @@ export function BillWizard() {
                     ))}
                   </div>
                   {customer && (
-                    <div className="notice">
+                    <div className="notice" style={{ marginTop: 18 }}>
                       <div className="row between">
-                        <strong>{customer.name}</strong>
+                        <div>
+                          <strong>{customer.name}</strong>
+                          <p className="muted" style={{ margin: "2px 0 0" }}>{customer.phone}</p>
+                        </div>
                         <Badge>Selected</Badge>
                       </div>
-                      <p className="muted">{customer.phone}</p>
-                      <small>
-                        {prescriptions.data?.rows[0]
-                          ? `Latest eye test: ${displayDate(prescriptions.data.rows[0].test_date)}`
-                          : "No prescription on record yet."}
-                      </small>
+                      <div className="row between" style={{ marginTop: 12, alignItems: "center" }}>
+                        <small>
+                          {prescriptions.data?.rows[0]
+                            ? `Latest eye test: ${displayDate(prescriptions.data.rows[0].test_date)}`
+                            : "No prescription on record yet."}
+                        </small>
+                        <Button
+                          type="button"
+                          onClick={async () => {
+                            await save();
+                            setStep(1);
+                          }}
+                        >
+                          Continue to Prescription →
+                        </Button>
+                      </div>
                     </div>
                   )}
                   <Button
@@ -891,11 +907,21 @@ export function BillWizard() {
       >
         <CustomerForm
           onSaved={async (customerId) => {
-            const r = await api<{ rows: Customer[] }>(
-              `customers?id=${customerId}`,
-            );
-            await selectCustomer(r.rows[0]);
-            setCustomerOpen(false);
+            try {
+              const r = await api<{ rows: Customer[] }>(
+                `customers?id=${customerId}`,
+              );
+              if (r.rows?.[0]) {
+                await selectCustomer(r.rows[0]);
+                setStep(1);
+              }
+            } catch (err) {
+              setError(
+                err instanceof Error ? err.message : "Failed to load customer",
+              );
+            } finally {
+              setCustomerOpen(false);
+            }
           }}
         />
       </BottomSheet>
