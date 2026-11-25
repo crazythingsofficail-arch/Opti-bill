@@ -190,6 +190,11 @@ export function BillWizard() {
   } catch (e) {
     calcError = e instanceof Error ? e.message : "Invalid discount";
   }
+  const isInterstate = Boolean(
+    shop.state_code &&
+      values.place_of_supply_state_code &&
+      values.place_of_supply_state_code !== shop.state_code,
+  );
   let totals: ReturnType<typeof calculateInvoice> | null = null;
   try {
     totals = calculateInvoice(
@@ -204,7 +209,7 @@ export function BillWizard() {
           )?.gst_rate_bp || 0,
       })),
       discount,
-      values.place_of_supply_state_code !== shop.state_code,
+      isInterstate,
       shop.gst_scheme === "regular",
     );
   } catch (e) {
@@ -851,7 +856,7 @@ export function BillWizard() {
                       : []),
                     ["Taxable", totals.taxable_total],
                     ...(shop.gst_scheme === "regular"
-                      ? values.place_of_supply_state_code === shop.state_code
+                      ? !isInterstate
                         ? [
                             ["CGST", totals.cgst],
                             ["SGST", totals.sgst],
@@ -891,7 +896,7 @@ export function BillWizard() {
             )}
             <p className="section-note">
               {shop.gst_scheme === "regular"
-                ? values.place_of_supply_state_code === shop.state_code
+                ? !isInterstate
                   ? "Intra-state supply · CGST + SGST"
                   : "Inter-state supply · IGST"
                 : "Bill of Supply · No GST charged"}

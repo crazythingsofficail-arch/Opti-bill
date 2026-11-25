@@ -8,6 +8,7 @@ const PUBLIC_PATHS = [
   "/manifest.webmanifest",
   "/api/login",
   "/api/health",
+  "/api/shared-pdf",
   "/health",
 ];
 

@@ -209,6 +209,10 @@ export type InvoiceItem = {
   lens_id?: string | null;
   lens_code?: string | null;
   lens_brand: string | null;
+  lens_type?: string | null;
+  lens_index?: string | null;
+  coatings?: string | null;
+  tint?: string | null;
   hsn_code: string;
   qty: number;
   unit: string;

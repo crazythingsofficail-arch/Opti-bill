@@ -14,6 +14,8 @@ import path from "node:path";
 import fs from "node:fs";
 import { formatMoney, amountInWords } from "./money";
 import { BRAND_FOOTER } from "./i18n";
+import { getUploadsDir } from "./store";
+import { downloadCloudAsset, isCloudStorageEnabled } from "./cloud-store";
 import type { PrintData, Prescription, Shop } from "./types";
 Font.register({
   family: "Roboto",
@@ -191,30 +193,53 @@ function Rx({ rx, compact = false }: { rx: Prescription; compact?: boolean }) {
     </View>
   );
 }
-function resolvePdfImage(src: string | null | undefined): string | null {
+async function resolvePdfImage(src: string | null | undefined): Promise<string | null> {
   if (!src) return null;
   if (src.startsWith("data:image/")) return src;
   try {
     const cleanPath = src.startsWith("/") ? src.slice(1) : src;
-    let absPath = path.join(process.cwd(), "public", cleanPath);
-    if (!fs.existsSync(absPath)) {
-      if (cleanPath.endsWith(".webp")) {
-        const jpgCandidate = path.join(
-          process.cwd(),
-          "public",
-          cleanPath.replace(/\.webp$/, ".jpg"),
-        );
-        if (fs.existsSync(jpgCandidate)) absPath = jpgCandidate;
+    const filename = path.basename(cleanPath);
+
+    // 1. Check local public/ and uploads directories
+    const candidates = [
+      path.join(process.cwd(), "public", cleanPath),
+      path.join(getUploadsDir(), filename),
+    ];
+    if (cleanPath.endsWith(".webp")) {
+      candidates.push(
+        path.join(process.cwd(), "public", cleanPath.replace(/\.webp$/, ".jpg")),
+      );
+    }
+
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        const ext = path.extname(candidate).toLowerCase();
+        const buf = fs.readFileSync(candidate);
+        if (ext === ".png") {
+          return `data:image/png;base64,${buf.toString("base64")}`;
+        }
+        if (ext === ".jpg" || ext === ".jpeg") {
+          return `data:image/jpeg;base64,${buf.toString("base64")}`;
+        }
       }
     }
-    if (fs.existsSync(absPath)) {
-      const ext = path.extname(absPath).toLowerCase();
-      const buf = fs.readFileSync(absPath);
-      if (ext === ".png") {
-        return `data:image/png;base64,${buf.toString("base64")}`;
-      }
-      if (ext === ".jpg" || ext === ".jpeg") {
-        return `data:image/jpeg;base64,${buf.toString("base64")}`;
+
+    // 2. Fallback to Supabase Storage for /api/uploads/<name> or /uploads/<name>
+    if (
+      isCloudStorageEnabled() &&
+      (src.startsWith("/api/uploads/") || src.startsWith("/uploads/"))
+    ) {
+      const asset = await downloadCloudAsset(filename);
+      if (asset) {
+        const mime =
+          filename.endsWith(".png")
+            ? "image/png"
+            : filename.endsWith(".jpg") || filename.endsWith(".jpeg")
+              ? "image/jpeg"
+              : asset.contentType;
+        if (mime === "image/png" || mime === "image/jpeg") {
+          return `data:${mime};base64,${asset.bytes.toString("base64")}`;
+        }
       }
     }
   } catch (e) {
@@ -240,9 +265,9 @@ export async function renderInvoicePdf(
     logo,
     signature,
   } = data;
-  const pdfPhoto = resolvePdfImage(photo);
-  const pdfLogo = resolvePdfImage(logo);
-  const pdfSignature = resolvePdfImage(signature);
+  const pdfPhoto = await resolvePdfImage(photo);
+  const pdfLogo = await resolvePdfImage(logo);
+  const pdfSignature = await resolvePdfImage(signature);
   const shop: Shop = i.shop_snapshot || {
     id: "shop-default",
     name: "Opti-X",

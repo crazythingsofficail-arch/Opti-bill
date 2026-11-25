@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { BrandUploader } from "./image-uploader";
 import { useWorkspace, useToast } from "./providers";
-import { Editor, shopFields, type FormField } from "./forms";
+import { Editor, getShopFields, type FormField } from "./forms";
 import {
   PageTitle,
   Card,
@@ -639,10 +639,15 @@ export function Settings() {
       {tab === "Shop & policies" && (
         <Card>
           <div className="form-grid" style={{ marginBottom: 30 }}>
-            <BrandUploader kind="logo" configured={!!shop.logo_path} />
+            <BrandUploader
+              kind="logo"
+              configured={!!shop.logo_path}
+              imageUrl={shop.logo_path}
+            />
             <BrandUploader
               kind="signature"
               configured={!!shop.signature_path}
+              imageUrl={shop.signature_path}
             />
           </div>
           <h2 style={{ marginBottom: 20 }}>
@@ -655,7 +660,7 @@ export function Settings() {
           </p>
           <Editor
             fields={[
-              ...shopFields,
+              ...getShopFields(shop.gst_scheme !== "unregistered"),
               {
                 name: "hsn_digits",
                 label: "Required HSN digits",

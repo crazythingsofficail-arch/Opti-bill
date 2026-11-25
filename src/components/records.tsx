@@ -450,7 +450,7 @@ export function Invoices({ dues = false }: { dues?: boolean }) {
                       href={
                         i.status === "draft"
                           ? `/new-bill?draft=${i.id}`
-                          : `/print/${i.id}`
+                          : `/invoices/${i.id}`
                       }
                     >
                       {i.invoice_no || "Draft"}
@@ -482,6 +482,21 @@ export function Invoices({ dues = false }: { dues?: boolean }) {
                   label: "Balance / refund",
                   render: (i) => formatMoney(i.refund_due || i.balance_due),
                   sort: (i) => i.balance_due,
+                },
+                {
+                  key: "actions",
+                  label: "",
+                  render: (i) =>
+                    i.status !== "draft" ? (
+                      <div className="row" style={{ gap: "8px" }}>
+                        <Link className="text-link" href={`/invoices/${i.id}`}>
+                          Manage
+                        </Link>
+                        <Link className="text-link" href={`/print/${i.id}`}>
+                          Print
+                        </Link>
+                      </div>
+                    ) : null,
                 },
               ]}
             />
@@ -968,14 +983,16 @@ export function Orders() {
                 {result.data?.rows
                   .filter((o) => o.status === status)
                   .map((o) => (
-                    <div
+                    <Link
                       key={o.id}
+                      href={`/orders/${o.id}`}
                       className="order-card"
+                      style={{ display: "block", textDecoration: "none", color: "inherit" }}
                     >
                       <strong>{o.order_no}</strong>
                       <small>Due {displayDate(o.promised_date)}</small>
                       <small>{o.lab_name || "Lab not assigned"}</small>
-                    </div>
+                    </Link>
                   ))}
                 {!result.data?.rows.some((o) => o.status === status) && (
                   <p className="muted" style={{ fontSize: 12 }}>

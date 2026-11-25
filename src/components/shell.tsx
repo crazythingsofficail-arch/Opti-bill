@@ -33,8 +33,11 @@ const navigation = [
   ["/", "Overview", Home],
   ["/customers", "Customers", Users],
   ["/new-bill", "New Bill", Plus],
+  ["/invoices", "Invoices", FileText],
+  ["/orders", "Orders", Package],
   ["/inventory", "Inventory", Glasses],
   ["/reports", "Reports", ChartNoAxesCombined],
+  ["/settings", "Settings", Settings],
   ["/support", "Support", LifeBuoy],
 ] as const;
 export function Shell({ children }: { children: React.ReactNode }) {
@@ -102,7 +105,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     ([href]) =>
       profile.role === "owner" ||
       (profile.role === "optometrist"
-        ? href === "/customers"
+        ? href === "/customers" || href === "/support"
         : !["/settings", "/reports"].includes(href)),
   );
   return (
@@ -236,6 +239,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           ["/customers", "Customers", Users],
           ["/new-bill", "New bill", Plus],
           ["/inventory", "Inventory", Glasses],
+          ["/more", "More", Ellipsis],
         ].map(([href, label, Icon]) => {
           const I = Icon as typeof Home;
           return (

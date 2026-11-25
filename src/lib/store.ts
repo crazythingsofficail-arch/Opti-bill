@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import QRCode from "qrcode";
 import type {
   Customer,
@@ -18,17 +19,51 @@ import type {
   DataRequest,
 } from "./types";
 import { calculateInvoice, financialYear, invoiceNumber } from "./money";
+import {
+  isCloudStorageEnabled,
+  isTestEnvironment,
+  readCloudStore,
+  writeCloudStore,
+  deleteCloudAsset,
+} from "./cloud-store";
+
+let readOnlyRootDetected = false;
+
+function isReadOnlyFsError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException)?.code;
+  return code === "EROFS" || code === "EACCES" || code === "EPERM";
+}
 
 export function getDataDir(): string {
-  return process.env.OPTI_DATA_DIR || path.join(process.cwd(), "data");
+  if (process.env.OPTI_DATA_DIR) return process.env.OPTI_DATA_DIR;
+  if (readOnlyRootDetected) {
+    return path.join(os.tmpdir(), "opti-x-data");
+  }
+  return path.join(process.cwd(), "data");
 }
 
 export function getStorePath(): string {
-  return process.env.OPTI_STORE_PATH || path.join(getDataDir(), "store.json");
+  if (process.env.OPTI_STORE_PATH) return process.env.OPTI_STORE_PATH;
+  return path.join(getDataDir(), "store.json");
 }
 
 export function getBackupPath(): string {
-  return process.env.OPTI_BACKUP_PATH || path.join(getDataDir(), "store.json.bak");
+  if (process.env.OPTI_BACKUP_PATH) return process.env.OPTI_BACKUP_PATH;
+  return path.join(getDataDir(), "store.json.bak");
+}
+
+export function getUploadsDir(): string {
+  if (process.env.OPTI_UPLOADS_DIR) return process.env.OPTI_UPLOADS_DIR;
+  if (readOnlyRootDetected) {
+    return path.join(os.tmpdir(), "opti-x-uploads");
+  }
+  return path.join(process.cwd(), "public", "uploads");
+}
+
+export function getStorageBackend(): "supabase" | "local-disk" | "ephemeral-tmp" {
+  if (isCloudStorageEnabled()) return "supabase";
+  if (readOnlyRootDetected) return "ephemeral-tmp";
+  return "local-disk";
 }
 
 export const DEFAULT_SHOP: Shop = {
@@ -57,7 +92,7 @@ export const DEFAULT_SHOP: Shop = {
   consent_text: "I hereby consent to eye examination and prescription record retention.",
   grievance_name: "Grievance Officer",
   grievance_email: "hello@opti-x.in",
-  retention_months: 60,
+  retention_months: 72,
   clinical_retention_months: 24,
   hsn_digits: 4,
   invoice_recipient_threshold_paise: 5000000,
@@ -94,6 +129,11 @@ export interface LocalStore {
   nextInvoiceSeq: number;
   members?: Profile[];
   requests?: DataRequest[];
+  mfa?: {
+    secret: string | null;
+    pendingSecret: string | null;
+    enabled: boolean;
+  };
 }
 
 function initialStore(): LocalStore {
@@ -141,15 +181,117 @@ function initialStore(): LocalStore {
 }
 
 let memoryStore: LocalStore | null = null;
+let pendingCloudSave: Promise<void> = Promise.resolve();
+
+function normalizeStore(s: LocalStore): LocalStore {
+  if (!s.shop) s.shop = { ...DEFAULT_SHOP };
+  if (!s.profile) s.profile = { ...DEFAULT_PROFILE };
+  if (!s.customers) s.customers = [];
+  if (!s.prescriptions) s.prescriptions = [];
+  if (!s.frames) s.frames = [];
+  if (!s.lenses) s.lenses = [];
+  if (!s.taxes || !s.taxes.length) s.taxes = initialStore().taxes;
+  if (!s.invoices) s.invoices = [];
+  if (!s.invoice_items) s.invoice_items = [];
+  if (!s.orders) s.orders = [];
+  if (!s.payments) s.payments = [];
+  if (!s.uploads) s.uploads = [];
+  if (!s.drafts) s.drafts = {};
+  if (!s.nextInvoiceSeq) s.nextInvoiceSeq = 1;
+  if (!s.members) s.members = [];
+  if (!s.requests) s.requests = [];
+  return s;
+}
+
+function writeLocalStore(jsonStr: string): void {
+  const attemptWrite = () => {
+    const dataDir = getDataDir();
+    const storePath = getStorePath();
+    const backupPath = getBackupPath();
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    const tempPath = path.join(
+      dataDir,
+      `store.tmp.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`,
+    );
+    fs.writeFileSync(tempPath, jsonStr, "utf8");
+    try {
+      fs.writeFileSync(backupPath, jsonStr, "utf8");
+    } catch {}
+    try {
+      fs.renameSync(tempPath, storePath);
+    } catch {
+      fs.copyFileSync(tempPath, storePath);
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {}
+    }
+  };
+
+  try {
+    attemptWrite();
+  } catch (err) {
+    if (!isTestEnvironment() && isReadOnlyFsError(err) && !readOnlyRootDetected) {
+      readOnlyRootDetected = true;
+      attemptWrite();
+      return;
+    }
+    throw err;
+  }
+}
+
+export async function loadStore(): Promise<LocalStore> {
+  if (isCloudStorageEnabled()) {
+    const cloudRaw = await readCloudStore();
+    if (cloudRaw !== null) {
+      memoryStore = normalizeStore(JSON.parse(cloudRaw));
+      return memoryStore;
+    }
+    // First-time cloud initialization: seed from bundled data/store.json if present, else initialStore
+    const bundledPath = path.join(process.cwd(), "data", "store.json");
+    let seed: LocalStore;
+    try {
+      if (fs.existsSync(bundledPath)) {
+        seed = normalizeStore(JSON.parse(fs.readFileSync(bundledPath, "utf8")));
+      } else {
+        seed = initialStore();
+      }
+    } catch {
+      seed = initialStore();
+    }
+    memoryStore = seed;
+    await writeCloudStore(JSON.stringify(seed, null, 2));
+    return memoryStore;
+  }
+  return getStore();
+}
+
+export async function persistStore(store?: LocalStore): Promise<void> {
+  if (store) {
+    saveStore(store);
+  }
+  await pendingCloudSave;
+}
 
 export function getStore(): LocalStore {
+  if (isCloudStorageEnabled() && memoryStore) {
+    return memoryStore;
+  }
+
   const dataDir = getDataDir();
   const storePath = getStorePath();
   const backupPath = getBackupPath();
 
   try {
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
+    if (!fs.existsSync(dataDir) && !readOnlyRootDetected) {
+      try {
+        fs.mkdirSync(dataDir, { recursive: true });
+      } catch (err) {
+        if (isReadOnlyFsError(err) && !isTestEnvironment()) {
+          readOnlyRootDetected = true;
+        }
+      }
     }
 
     let raw: string | null = null;
@@ -170,33 +312,24 @@ export function getStore(): LocalStore {
         JSON.parse(candidate);
         raw = candidate;
         console.info("Recovered store data from backup copy.");
-        fs.writeFileSync(storePath, raw, "utf8");
+        try {
+          fs.writeFileSync(storePath, raw, "utf8");
+        } catch {}
       } catch (err) {
         console.error("Backup store also corrupted:", err);
       }
     }
 
-    if (raw !== null) {
-      memoryStore = JSON.parse(raw);
-      if (memoryStore) {
-        if (!memoryStore.shop) memoryStore.shop = DEFAULT_SHOP;
-        if (!memoryStore.profile) memoryStore.profile = DEFAULT_PROFILE;
-        if (!memoryStore.customers) memoryStore.customers = [];
-        if (!memoryStore.prescriptions) memoryStore.prescriptions = [];
-        if (!memoryStore.frames) memoryStore.frames = [];
-        if (!memoryStore.lenses) memoryStore.lenses = [];
-        if (!memoryStore.taxes || !memoryStore.taxes.length) memoryStore.taxes = initialStore().taxes;
-        if (!memoryStore.invoices) memoryStore.invoices = [];
-        if (!memoryStore.invoice_items) memoryStore.invoice_items = [];
-        if (!memoryStore.orders) memoryStore.orders = [];
-        if (!memoryStore.payments) memoryStore.payments = [];
-        if (!memoryStore.uploads) memoryStore.uploads = [];
-        if (!memoryStore.drafts) memoryStore.drafts = {};
-        if (!memoryStore.nextInvoiceSeq) memoryStore.nextInvoiceSeq = 1;
-        if (!memoryStore.members) memoryStore.members = [];
-        if (!memoryStore.requests) memoryStore.requests = [];
-        return memoryStore;
+    if (raw === null && !isTestEnvironment()) {
+      const bundledPath = path.join(process.cwd(), "data", "store.json");
+      if (bundledPath !== storePath && fs.existsSync(bundledPath)) {
+        raw = fs.readFileSync(bundledPath, "utf8");
       }
+    }
+
+    if (raw !== null) {
+      memoryStore = normalizeStore(JSON.parse(raw));
+      return memoryStore;
     }
   } catch (err) {
     console.error("Store load failure:", err);
@@ -210,41 +343,22 @@ export function getStore(): LocalStore {
 
 export function resetMemoryStoreForTesting(): void {
   memoryStore = null;
+  pendingCloudSave = Promise.resolve();
 }
 
 export function saveStore(store: LocalStore): void {
   memoryStore = store;
-  const dataDir = getDataDir();
-  const storePath = getStorePath();
-  const backupPath = getBackupPath();
+  const jsonStr = JSON.stringify(store, null, 2);
+
+  if (isCloudStorageEnabled()) {
+    pendingCloudSave = pendingCloudSave
+      .catch(() => undefined)
+      .then(() => writeCloudStore(jsonStr));
+    return;
+  }
 
   try {
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-    const jsonStr = JSON.stringify(store, null, 2);
-
-    // 1. Write to atomic temp file first
-    const tempPath = path.join(
-      dataDir,
-      `store.tmp.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`,
-    );
-    fs.writeFileSync(tempPath, jsonStr, "utf8");
-
-    // 2. Maintain backup copy of valid data
-    try {
-      fs.writeFileSync(backupPath, jsonStr, "utf8");
-    } catch {}
-
-    // 3. Atomically replace destination
-    try {
-      fs.renameSync(tempPath, storePath);
-    } catch {
-      fs.copyFileSync(tempPath, storePath);
-      try {
-        fs.unlinkSync(tempPath);
-      } catch {}
-    }
+    writeLocalStore(jsonStr);
   } catch (err) {
     console.error("Failed to write store.json atomically:", err);
   }
@@ -556,21 +670,31 @@ export function finaliseInvoice(invoiceId: string, key: string, payments: any[])
 
   // Calculate invoice
   const currentTaxes = store.taxes;
-  const lines = (draft.items || []).map((l: any) => ({
-    ...l,
-    qty: Number(l.qty) || 1,
-    unit_price_paise: Number(l.unit_price_paise) || 0,
-    discount_paise: Number(l.discount_paise) || 0,
-    gst_rate_bp:
-      Number(currentTaxes.find((t) => t.id === l.tax_category_id)?.gst_rate_bp) ||
-      Number(l.gst_rate_bp) ||
-      1200,
-  }));
+  const lines = (draft.items || []).map((l: any) => {
+    const matchedTax = currentTaxes.find((t) => t.id === l.tax_category_id);
+    const gstRateBp =
+      matchedTax != null
+        ? Number(matchedTax.gst_rate_bp)
+        : l.gst_rate_bp != null && !isNaN(Number(l.gst_rate_bp))
+          ? Number(l.gst_rate_bp)
+          : 1200;
+    return {
+      ...l,
+      qty: Number(l.qty) || 1,
+      unit_price_paise: Number(l.unit_price_paise) || 0,
+      discount_paise: Number(l.discount_paise) || 0,
+      gst_rate_bp: gstRateBp,
+    };
+  });
+
+  const shopState = (store.shop.state_code || "").trim();
+  const posState = (draft.place_of_supply_state_code || shopState).trim();
+  const isInterstate = Boolean(shopState && posState && posState !== shopState);
 
   const calc = calculateInvoice(
     lines,
     draft.overall_discount_paise || 0,
-    draft.place_of_supply_state_code !== store.shop.state_code,
+    isInterstate,
     store.shop.gst_scheme === "regular",
   );
 
@@ -579,7 +703,6 @@ export function finaliseInvoice(invoiceId: string, key: string, payments: any[])
   const balanceDue = Math.max(0, calc.grand_total - totalPaid);
 
   const cust = draft.customer_id ? getCustomer(draft.customer_id) : null;
-  const isInterstate = (draft.place_of_supply_state_code || store.shop.state_code) !== store.shop.state_code;
   const customerSnapshot = cust
     ? {
         id: cust.id,
@@ -637,30 +760,46 @@ export function finaliseInvoice(invoiceId: string, key: string, payments: any[])
   };
 
   // Items
-  const invoiceItems: InvoiceItem[] = calc.items.map((item: any, idx: number) => ({
-    id: crypto.randomUUID(),
-    invoice_id: invoiceId,
-    position: idx + 1,
-    item_type: item.item_type || "frame",
-    description: item.description || "Optical Product",
-    specs: item.specs || {},
-    frame_model_no: item.frame_model_no || "",
-    lens_brand: item.lens_brand || "",
-    qty: item.qty,
-    unit: item.unit || "piece",
-    unit_price_paise: item.unit_price_paise,
-    discount_paise: item.discount_paise,
-    taxable_paise: item.taxable_paise,
-    gst_rate_bp: item.gst_rate_bp ?? 1200,
-    cgst_paise: item.cgst_paise,
-    sgst_paise: item.sgst_paise,
-    igst_paise: item.igst_paise,
-    cgst_rate_bp: item.cgst_paise ? item.gst_rate_bp / 2 : 0,
-    sgst_rate_bp: item.sgst_paise ? item.gst_rate_bp / 2 : 0,
-    igst_rate_bp: item.igst_paise ? item.gst_rate_bp : 0,
-    tax_category_id: item.tax_category_id || "",
-    hsn_code: currentTaxes.find((t) => t.id === item.tax_category_id)?.hsn_code || "9003",
-  }));
+  const invoiceItems: InvoiceItem[] = calc.items.map((item: any, idx: number) => {
+    const specs: Record<string, string | null> = {
+      ...(item.specs || {}),
+      ...(item.lens_code ? { lens_code: item.lens_code } : {}),
+      ...(item.lens_type ? { lens_type: item.lens_type } : {}),
+      ...(item.lens_index ? { lens_index: item.lens_index } : {}),
+      ...(item.coatings ? { coatings: item.coatings } : {}),
+      ...(item.tint ? { tint: item.tint } : {}),
+    };
+    return {
+      id: crypto.randomUUID(),
+      invoice_id: invoiceId,
+      position: idx + 1,
+      item_type: item.item_type || "frame",
+      description: item.description || "Optical Product",
+      specs,
+      frame_model_no: item.frame_model_no || "",
+      lens_id: item.lens_id || null,
+      lens_code: item.lens_code || null,
+      lens_brand: item.lens_brand || "",
+      lens_type: item.lens_type || null,
+      lens_index: item.lens_index || null,
+      coatings: item.coatings || null,
+      tint: item.tint || null,
+      qty: item.qty,
+      unit: item.unit || "piece",
+      unit_price_paise: item.unit_price_paise,
+      discount_paise: item.discount_paise,
+      taxable_paise: item.taxable_paise,
+      gst_rate_bp: item.gst_rate_bp ?? 1200,
+      cgst_paise: item.cgst_paise,
+      sgst_paise: item.sgst_paise,
+      igst_paise: item.igst_paise,
+      cgst_rate_bp: item.cgst_paise ? item.gst_rate_bp / 2 : 0,
+      sgst_rate_bp: item.sgst_paise ? item.gst_rate_bp / 2 : 0,
+      igst_rate_bp: item.igst_paise ? item.gst_rate_bp : 0,
+      tax_category_id: item.tax_category_id || "",
+      hsn_code: currentTaxes.find((t) => t.id === item.tax_category_id)?.hsn_code || "9003",
+    };
+  });
 
   // Order
   const orderRecord: Order = {
@@ -729,15 +868,78 @@ export function finaliseInvoice(invoiceId: string, key: string, payments: any[])
   return invoiceId;
 }
 
-export function searchInvoices(q: string, page = 1, limit = 50, paymentFilter?: string) {
+export function searchInvoices(
+  q: string,
+  page = 1,
+  limit = 50,
+  paymentFilter?: string,
+  statusFilter?: string,
+  fromDate?: string,
+  toDate?: string,
+) {
   const store = getStore();
   const query = q.trim().toLowerCase();
-  let list = store.invoices;
+  let list: Invoice[] = [...store.invoices];
+
+  // Include saved drafts if filtering for drafts or all statuses without a payment filter
+  if (statusFilter === "draft" || (!statusFilter && !paymentFilter)) {
+    const draftInvoices: Invoice[] = Object.values(store.drafts || {}).map((d: any) => {
+      const cust = d.customer_id ? getCustomer(d.customer_id) : null;
+      return {
+        id: d.id,
+        shop_id: store.shop.id,
+        customer_id: d.customer_id || "",
+        order_id: d.order_id || "",
+        invoice_no: null,
+        type: "tax_invoice",
+        status: "draft",
+        display_status: "draft",
+        payment_status: "unpaid",
+        customer_snapshot: cust ? { id: cust.id, name: cust.name, phone: cust.phone } : null,
+        shop_snapshot: null,
+        place_of_supply_state_code: d.place_of_supply_state_code || "",
+        is_interstate: false,
+        subtotal: 0,
+        discount_total: 0,
+        taxable_total: 0,
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
+        round_off: 0,
+        grand_total: 0,
+        amount_paid: 0,
+        balance_due: 0,
+        refund_due: 0,
+        overall_discount_paise: d.overall_discount_paise || 0,
+        draft_version: d.version || 1,
+        draft_payments: d.payments || [],
+        created_at: d.updated_at || new Date().toISOString(),
+        finalised_at: null,
+        original_invoice_id: null,
+        credit_reason: null,
+        cancel_reason: null,
+      };
+    });
+    list = [...draftInvoices, ...list];
+  }
+
+  if (statusFilter) {
+    list = list.filter((i) => i.status === statusFilter || i.display_status === statusFilter);
+  }
 
   if (paymentFilter === "outstanding") {
-    list = list.filter((i) => i.balance_due > 0);
+    list = list.filter(
+      (i) => i.status === "finalised" && (i.balance_due > 0 || i.refund_due > 0),
+    );
   } else if (paymentFilter) {
     list = list.filter((i) => i.payment_status === paymentFilter);
+  }
+
+  if (fromDate) {
+    list = list.filter((i) => (i.finalised_at || i.created_at).slice(0, 10) >= fromDate);
+  }
+  if (toDate) {
+    list = list.filter((i) => (i.finalised_at || i.created_at).slice(0, 10) <= toDate);
   }
 
   if (query) {
@@ -745,6 +947,7 @@ export function searchInvoices(q: string, page = 1, limit = 50, paymentFilter?: 
       const cust = store.customers.find((c) => c.id === i.customer_id);
       return (
         i.invoice_no?.toLowerCase().includes(query) ||
+        i.customer_snapshot?.name?.toLowerCase().includes(query) ||
         cust?.name.toLowerCase().includes(query) ||
         cust?.phone?.includes(query)
       );
@@ -788,15 +991,21 @@ export function getDashboardStats() {
   const today = new Date().toISOString().slice(0, 10);
   const thisMonth = today.slice(0, 7);
 
-  const todaySales = store.invoices
+  const activeSalesInvoices = store.invoices.filter(
+    (i) => i.status === "finalised" || i.status === "credited",
+  );
+
+  const todaySales = activeSalesInvoices
     .filter((i) => i.finalised_at?.startsWith(today))
     .reduce((sum, i) => sum + i.grand_total, 0);
 
-  const monthSales = store.invoices
+  const monthSales = activeSalesInvoices
     .filter((i) => i.finalised_at?.startsWith(thisMonth))
     .reduce((sum, i) => sum + i.grand_total, 0);
 
-  const dues = store.invoices.reduce((sum, i) => sum + i.balance_due, 0);
+  const dues = store.invoices
+    .filter((i) => i.status === "finalised")
+    .reduce((sum, i) => sum + i.balance_due, 0);
   const readyOrders = store.orders.filter((o) => o.status === "Ready").length;
 
   const recent = store.invoices.slice(0, 6);
@@ -923,8 +1132,8 @@ export function getReportsData(fromStr?: string, toStr?: string): Report {
   const to = toStr || "2099-12-31";
 
   const invoices = store.invoices.filter((i) => {
-    if (i.status !== "finalised") return false;
-    const date = i.created_at.slice(0, 10);
+    if (i.status !== "finalised" && i.status !== "credited") return false;
+    const date = (i.finalised_at || i.created_at).slice(0, 10);
     return date >= from && date <= to;
   });
 
@@ -992,16 +1201,17 @@ export function getReportsData(fromStr?: string, toStr?: string): Report {
   const gst = Object.values(gstMap);
 
   const modeMap: Record<string, number> = {};
-  const payments = store.payments.filter(
-    (p) => Boolean(p.invoice_id && matchingInvoiceIds.has(p.invoice_id)),
-  );
+  const payments = store.payments.filter((p) => {
+    const pDate = (p.paid_at || "").slice(0, 10);
+    return (
+      (p.invoice_id && matchingInvoiceIds.has(p.invoice_id)) ||
+      (pDate >= from && pDate <= to)
+    );
+  });
   for (const p of payments) {
     modeMap[p.mode] = (modeMap[p.mode] || 0) + (p.amount_paise || 0);
   }
   const modes = Object.entries(modeMap).map(([mode, amount]) => ({ mode, amount }));
-  if (modes.length === 0) {
-    modes.push({ mode: "Cash", amount: invoices.reduce((s, i) => s + i.amount_paid, 0) });
-  }
 
   const now = Date.now();
   let b0_30 = 0,
@@ -1009,7 +1219,7 @@ export function getReportsData(fromStr?: string, toStr?: string): Report {
     b61_90 = 0,
     b90plus = 0;
   for (const inv of store.invoices) {
-    if (inv.balance_due > 0) {
+    if (inv.status === "finalised" && inv.balance_due > 0) {
       const days = Math.floor(
         (now - new Date(inv.created_at).getTime()) / (1000 * 60 * 60 * 24),
       );
@@ -1058,7 +1268,10 @@ export function saveTaxCategory(data: Partial<TaxCategory>, id?: string): string
     id: taxId,
     name: data.name || "GST Category",
     hsn_code: data.hsn_code || "9003",
-    gst_rate_bp: Number(data.gst_rate_bp) || 1200,
+    gst_rate_bp:
+      data.gst_rate_bp != null && !isNaN(Number(data.gst_rate_bp))
+        ? Number(data.gst_rate_bp)
+        : 1200,
     effective_from: data.effective_from || new Date().toISOString().split("T")[0],
     is_active: data.is_active ?? true,
   };
@@ -1080,6 +1293,9 @@ export function cancelInvoice(invoiceId: string, reason: string, restock = false
   inv.status = "cancelled";
   inv.display_status = "cancelled";
   inv.cancel_reason = reason;
+  if (inv.amount_paid <= 0) {
+    inv.balance_due = 0;
+  }
 
   if (restock) {
     const items = store.invoice_items.filter((it) => it.invoice_id === invoiceId);
@@ -1108,6 +1324,8 @@ export function creditInvoice(invoiceId: string, reason: string, restock = false
   inv.status = "credited";
   inv.display_status = "credited";
   inv.credit_reason = reason;
+  inv.balance_due = 0;
+  inv.payment_status = "settled";
 
   const creditNoteId = crypto.randomUUID();
   const nextSeq = store.invoices.filter((i) => i.type === "credit_note").length + 1;
@@ -1217,10 +1435,16 @@ export function removeLensUpload(orderId: string): void {
   const upload = store.uploads.find((u) => u.order_id === orderId);
   if (upload) {
     store.uploads = store.uploads.filter((u) => u.order_id !== orderId);
+    const filename = path.basename(upload.storage_path);
     try {
-      const fullPath = path.join(process.cwd(), "public", upload.storage_path);
-      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+      const localPath = path.join(getUploadsDir(), filename);
+      if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+      const legacyPath = path.join(process.cwd(), "public", upload.storage_path);
+      if (fs.existsSync(legacyPath)) fs.unlinkSync(legacyPath);
     } catch {}
+    if (isCloudStorageEnabled()) {
+      void deleteCloudAsset(filename);
+    }
     saveStore(store);
   }
 }
@@ -1338,10 +1562,16 @@ export function eraseCustomerData(requestId: string): void {
   const custOrderIds = new Set(custOrders.map((o) => o.id));
   store.uploads = store.uploads.filter((u) => {
     if (custOrderIds.has(u.order_id)) {
+      const filename = path.basename(u.storage_path);
       try {
+        const localPath = path.join(getUploadsDir(), filename);
+        if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
         const p = path.join(process.cwd(), "public", u.storage_path);
         if (fs.existsSync(p)) fs.unlinkSync(p);
       } catch {}
+      if (isCloudStorageEnabled()) {
+        void deleteCloudAsset(filename);
+      }
       return false;
     }
     return true;

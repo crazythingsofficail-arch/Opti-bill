@@ -67,7 +67,18 @@ export const setupSchema = z
     path: ["gstin"],
   });
 export const settingsSchema = z
-  .object(setupSchema.shape)
+  .object({
+    ...setupSchema.shape,
+    address: z.string().max(500),
+    city: z.string().max(120),
+    state: z.string().max(120),
+    state_code: z
+      .string()
+      .refine((v) => !v || /^\d{2}$/.test(v), "State code must be 2 digits"),
+    pincode: z
+      .string()
+      .refine((v) => !v || /^\d{6}$/.test(v), "PIN code must be 6 digits"),
+  })
   .omit({ full_name: true })
   .extend({
     terms_text: text,
@@ -77,13 +88,13 @@ export const settingsSchema = z
     reverse_charge_text: text,
     privacy_text: z
       .string()
-      .min(100)
+      .min(10)
       .max(30000)
       .refine(validPolicyTokens, "Unknown privacy policy field"),
     privacy_version: z.string().min(1).max(50),
     terms_of_use_text: z
       .string()
-      .min(100)
+      .min(10)
       .max(30000)
       .refine(validPolicyTokens, "Unknown terms field"),
     consent_text: z.string().min(20).max(3000),
@@ -95,7 +106,20 @@ export const settingsSchema = z
     upi_id: z.string().max(100).nullable(),
     bank_details: optionalText,
     einvoice_enabled: z.boolean(),
-  });
+  })
+  .refine((p) => p.gst_scheme === "unregistered" || !!p.gstin, {
+    message: "GSTIN is required for a registered shop",
+    path: ["gstin"],
+  })
+  .refine(
+    (p) =>
+      p.gst_scheme === "unregistered" ||
+      (!!p.state_code && (!p.gstin || p.gstin.startsWith(p.state_code))),
+    {
+      message: "GSTIN must match the state code",
+      path: ["gstin"],
+    },
+  );
 export const normalizeStateCode = (val: unknown): string => {
   if (val === null || val === undefined) return "";
   const s = String(val).trim();
@@ -390,7 +414,7 @@ export const draftSchema = z.object({
   prescription_id: uuid.nullish().transform((v) => v ?? null),
   place_of_supply_state_code: z
     .unknown()
-    .transform((v) => normalizeStateCode(v) || "29"),
+    .transform((v) => normalizeStateCode(v)),
   overall_discount_paise: money.nullish().transform((v) => v ?? 0),
   promised_date: date.nullish().transform((v) => v ?? null),
   notes: text.nullish().transform((v) => v ?? ""),

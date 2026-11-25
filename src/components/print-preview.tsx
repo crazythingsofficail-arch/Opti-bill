@@ -103,6 +103,9 @@ export function PrintPreview({
                 <Download size={16} />
                 PDF
               </a>
+              <Link className="button secondary" href={`/invoices/${i.id}`}>
+                Manage invoice
+              </Link>
               <Link
                 className="button secondary"
                 href="/customers?filter=completed"

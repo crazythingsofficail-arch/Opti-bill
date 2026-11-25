@@ -106,6 +106,17 @@ export function DynamicItemForm({
     }
   }
 
+  const selectedFrameInv = frames.find((x) => x.id === frameId);
+  const selectedLensInv = lenses.find((x) => x.id === lensId);
+  const frameStockWarn =
+    selectedFrameInv &&
+    (activeTab === "Frame only" || activeTab === "Frame + Lens") &&
+    selectedFrameInv.stock_qty < (activeTab === "Frame only" ? frameQty : 1);
+  const lensStockWarn =
+    selectedLensInv &&
+    (activeTab === "Lens only" || activeTab === "Frame + Lens") &&
+    selectedLensInv.stock_qty < (activeTab === "Lens only" ? lensQty : 1);
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     try {
@@ -245,6 +256,16 @@ export function DynamicItemForm({
       {error && (
         <p className="notice error-text" role="alert" style={{ marginBottom: 16 }}>
           {error}
+        </p>
+      )}
+      {(frameStockWarn || lensStockWarn) && (
+        <p className="notice warning" style={{ marginBottom: 16 }}>
+          {frameStockWarn
+            ? `Low frame stock: ${selectedFrameInv!.model_no} has ${selectedFrameInv!.stock_qty} in stock.`
+            : ""}{" "}
+          {lensStockWarn
+            ? `Low lens stock: ${selectedLensInv!.lens_code} has ${selectedLensInv!.stock_qty} pairs in stock (lab order).`
+            : ""}
         </p>
       )}
 

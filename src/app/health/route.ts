@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
-import { getStore } from "@/lib/store";
+import { loadStore, getStorageBackend } from "@/lib/store";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const store = getStore();
+    const store = await loadStore();
     return NextResponse.json(
       {
         status: "healthy",
         service: "Opti-X Billing",
         uptime: process.uptime(),
         timestamp: new Date().toISOString(),
+        storageBackend: getStorageBackend(),
         store: {
           readable: true,
           invoicesCount: store.invoices.length,

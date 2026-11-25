@@ -135,42 +135,45 @@ export function Editor({
     </form>
   );
 }
-export const shopFields: FormField[] = [
-  { name: "name", label: "Shop name", required: true },
-  { name: "legal_name", label: "Legal name", required: true },
-  { name: "phone", label: "Phone (+91)", type: "tel", required: true },
-  { name: "email", label: "Shop email", type: "email", required: true },
-  { name: "address", label: "Address", required: true, wide: true },
-  { name: "city", label: "City", required: true },
-  { name: "state", label: "State", required: true },
-  { name: "state_code", label: "GST state code (2 digits)", required: true },
-  { name: "pincode", label: "PIN code", required: true },
-  {
-    name: "gst_scheme",
-    label: "GST scheme",
-    type: "select",
-    options: ["regular", "composition", "unregistered"],
-    required: true,
-  },
-  {
-    name: "gstin",
-    label: "GSTIN",
-    hint: "Required for regular and composition shops.",
-  },
-  {
-    name: "invoice_prefix",
-    label: "Invoice prefix",
-    required: true,
-    hint: "1–4 uppercase letters or digits.",
-  },
-  {
-    name: "invoice_recipient_threshold_paise",
-    label: "Recipient-address threshold (₹)",
-    type: "money",
-    required: true,
-    hint: "Owner-configured rule; verify the current requirement.",
-  },
-];
+export function getShopFields(requireAddress = true): FormField[] {
+  return [
+    { name: "name", label: "Shop name", required: true },
+    { name: "legal_name", label: "Legal name", required: true },
+    { name: "phone", label: "Phone (+91)", type: "tel", required: true },
+    { name: "email", label: "Shop email", type: "email", required: true },
+    { name: "address", label: "Address", required: requireAddress, wide: true },
+    { name: "city", label: "City", required: requireAddress },
+    { name: "state", label: "State", required: requireAddress },
+    { name: "state_code", label: "GST state code (2 digits)", required: requireAddress },
+    { name: "pincode", label: "PIN code", required: requireAddress },
+    {
+      name: "gst_scheme",
+      label: "GST scheme",
+      type: "select",
+      options: ["regular", "composition", "unregistered"],
+      required: true,
+    },
+    {
+      name: "gstin",
+      label: "GSTIN",
+      hint: "Required for regular and composition shops.",
+    },
+    {
+      name: "invoice_prefix",
+      label: "Invoice prefix",
+      required: true,
+      hint: "1–4 uppercase letters or digits.",
+    },
+    {
+      name: "invoice_recipient_threshold_paise",
+      label: "Recipient-address threshold (₹)",
+      type: "money",
+      required: true,
+      hint: "Owner-configured rule; verify the current requirement.",
+    },
+  ];
+}
+export const shopFields: FormField[] = getShopFields(true);
 export function CustomerForm({
   initial,
   onSaved,

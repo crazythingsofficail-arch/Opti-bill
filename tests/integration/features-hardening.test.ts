@@ -407,4 +407,154 @@ describe("High & Medium API Features Hardening (BUG-007 through BUG-014)", () =>
     expect(body.store).toBeDefined();
     expect(body.store.readable).toBe(true);
   });
+
+  it("BUG-016: preserves 0% GST rate on tax creation and invoice finalisation", async () => {
+    const store = getStore();
+    store.shop.gst_scheme = "regular";
+    store.shop.state_code = "29";
+    saveStore(store);
+
+    const taxReq = new NextRequest("http://localhost:3001/api/taxes", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        data: {
+          name: "Zero Rated Test",
+          hsn_code: "9993",
+          gst_rate_bp: 0,
+          effective_from: "2020-01-01",
+          is_active: true,
+        },
+      }),
+    });
+    const taxRes = await POST(taxReq, { params: Promise.resolve({ resource: "taxes" }) });
+    expect(taxRes.status).toBe(200);
+    const { id: zeroTaxId } = await taxRes.json();
+    expect(getStore().taxes.find((t) => t.id === zeroTaxId)?.gst_rate_bp).toBe(0);
+
+    const custId = saveCustomer({ name: "Zero Tax Cust", phone: "+919876500001", state_code: "29" });
+    const draftId = crypto.randomUUID();
+    saveDraft(draftId, {
+      id: draftId,
+      customer_id: custId,
+      place_of_supply_state_code: "29",
+      items: [
+        {
+          item_type: "service",
+          description: "Comprehensive Eye Exam",
+          unit_price_paise: 50000,
+          qty: 1,
+          unit: "service",
+          discount_paise: 0,
+          tax_category_id: zeroTaxId,
+        },
+      ],
+      payments: [{ amount_paise: 50000, mode: "cash" }],
+    });
+
+    const invId = finaliseInvoice(draftId, "key-zero-1", [{ amount_paise: 50000, mode: "cash" }]);
+    const inv = getStore().invoices.find((i) => i.id === invId)!;
+    expect(inv.cgst).toBe(0);
+    expect(inv.sgst).toBe(0);
+    expect(inv.igst).toBe(0);
+    expect(inv.grand_total).toBe(50000);
+  });
+
+  it("BUG-017: handles share link generation, customer export, MFA enroll, and unknown POST rejection", async () => {
+    const custId = saveCustomer({ name: "Share Export Cust", phone: "+919876500002" });
+    const draftId = crypto.randomUUID();
+    saveDraft(draftId, {
+      id: draftId,
+      customer_id: custId,
+      items: [
+        {
+          item_type: "lens",
+          description: "Blue Cut Single Vision",
+          lens_brand: "Essilor",
+          lens_code: "ES-BC-156",
+          lens_type: "single vision",
+          lens_index: "1.56 Thin",
+          coatings: "Blue Cut / Computer",
+          tint: "Clear",
+          unit_price_paise: 150000,
+          qty: 1,
+          unit: "pair",
+          discount_paise: 0,
+          tax_category_id: getStore().taxes[0].id,
+        },
+      ],
+      payments: [],
+    });
+    const invId = finaliseInvoice(draftId, "key-share-1", []);
+
+    // Share link + public shared-pdf retrieval
+    const shareRes = await POST(
+      new NextRequest("http://localhost:3001/api/share", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: invId }),
+      }),
+      { params: Promise.resolve({ resource: "share" }) },
+    );
+    expect(shareRes.status).toBe(200);
+    const { url } = await shareRes.json();
+    expect(url).toContain("/api/shared-pdf?token=");
+
+    const tokenParam = new URL(url).searchParams.get("token")!;
+    const sharedPdfRes = await GET(
+      new NextRequest(`http://localhost:3001/api/shared-pdf?token=${encodeURIComponent(tokenParam)}`),
+      { params: Promise.resolve({ resource: "shared-pdf" }) },
+    );
+    expect(sharedPdfRes.status).toBe(200);
+    expect(sharedPdfRes.headers.get("content-type")).toBe("application/pdf");
+
+    // Customer export JSON & PDF
+    const jsonExport = await POST(
+      new NextRequest("http://localhost:3001/api/customer-export", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: custId, format: "json" }),
+      }),
+      { params: Promise.resolve({ resource: "customer-export" }) },
+    );
+    expect(jsonExport.status).toBe(200);
+    const exportedObj = await jsonExport.json();
+    expect(exportedObj.customer.id).toBe(custId);
+
+    const pdfExport = await POST(
+      new NextRequest("http://localhost:3001/api/customer-export", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: custId, format: "pdf" }),
+      }),
+      { params: Promise.resolve({ resource: "customer-export" }) },
+    );
+    expect(pdfExport.status).toBe(200);
+    expect(pdfExport.headers.get("content-type")).toBe("application/pdf");
+
+    // MFA enroll
+    const mfaRes = await POST(
+      new NextRequest("http://localhost:3001/api/mfa-enroll", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({}),
+      }),
+      { params: Promise.resolve({ resource: "mfa-enroll" }) },
+    );
+    expect(mfaRes.status).toBe(200);
+    const mfaBody = await mfaRes.json();
+    expect(mfaBody.totp.secret).toBeTruthy();
+    expect(mfaBody.totp.qr_code).toContain("<svg");
+
+    // Unknown POST endpoint must fail with 400
+    const unknownRes = await POST(
+      new NextRequest("http://localhost:3001/api/nonexistent-endpoint", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({}),
+      }),
+      { params: Promise.resolve({ resource: "nonexistent-endpoint" }) },
+    );
+    expect(unknownRes.status).toBe(400);
+  });
 });

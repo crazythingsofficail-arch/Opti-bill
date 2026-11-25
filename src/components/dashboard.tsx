@@ -133,7 +133,7 @@ export function Dashboard({ initial }: { initial?: DashboardData }) {
                             href={
                               i.status === "draft"
                                 ? `/new-bill?draft=${i.id}`
-                                : `/print/${i.id}`
+                                : `/invoices/${i.id}`
                             }
                           >
                             {i.invoice_no || "Draft"}

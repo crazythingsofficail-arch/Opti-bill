@@ -150,9 +150,11 @@ export function ImageUploader({
 export function BrandUploader({
   kind,
   configured,
+  imageUrl,
 }: {
   kind: "logo" | "signature";
   configured: boolean;
+  imageUrl?: string | null;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const toast = useToast();
@@ -164,11 +166,11 @@ export function BrandUploader({
         {configured ? "An image is configured." : "No image configured."} Old
         invoice copies retain their original branding.
       </p>
-      {configured && kind === "logo" && (
+      {configured && (imageUrl || kind === "logo") && (
         <div style={{ margin: "12px 0" }}>
           <img
-            src="/logo.png"
-            alt="Configured logo"
+            src={imageUrl || "/logo.png"}
+            alt={kind === "logo" ? "Configured logo" : "Configured signature"}
             style={{
               height: 44,
               maxWidth: 160,

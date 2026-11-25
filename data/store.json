@@ -25,7 +25,7 @@
     "consent_text": "I hereby consent to eye examination and prescription record retention.",
     "grievance_name": "Grievance Officer",
     "grievance_email": "hello@opti-x.in",
-    "retention_months": 60,
+    "retention_months": 72,
     "clinical_retention_months": 24,
     "hsn_digits": 4,
     "invoice_recipient_threshold_paise": 5000000,
