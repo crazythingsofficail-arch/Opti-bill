@@ -527,12 +527,25 @@ export async function POST(request: NextRequest, { params }: Params) {
       }
 
       const p = v.loginSchema.parse(body);
-      const expectedPassword = process.env.ADMIN_PASSWORD || "LFR@26-1204";
-      const expectedEmail = process.env.ADMIN_EMAIL || "admin@opti-x.in";
+      const expectedPassword =
+        process.env.APP_PASSWORD ||
+        process.env.ADMIN_PASSWORD ||
+        "LFR@26-1204";
+      const expectedUser = (
+        process.env.APP_USER ||
+        process.env.ADMIN_USER ||
+        process.env.ADMIN_EMAIL ||
+        "admin"
+      ).trim();
 
-      const emailMatches =
-        p.email.toLowerCase() === expectedEmail.toLowerCase() ||
-        p.email.toLowerCase() === "admin";
+      const inputLower = p.identifier.toLowerCase();
+      const expectedLower = expectedUser.toLowerCase();
+      const userMatches =
+        inputLower === expectedLower ||
+        (!expectedLower.includes("@") &&
+          inputLower === `${expectedLower}@opti-x.in`) ||
+        (expectedLower === "admin" && inputLower === "admin@opti-x.in") ||
+        (expectedLower === "admin@opti-x.in" && inputLower === "admin");
 
       let passwordMatches = false;
       try {
@@ -545,9 +558,9 @@ export async function POST(request: NextRequest, { params }: Params) {
         passwordMatches = false;
       }
 
-      if (!emailMatches || !passwordMatches) {
+      if (!userMatches || !passwordMatches) {
         recordFailedLogin(clientIp);
-        throw new Error("Unable to log in. Check your email and password.");
+        throw new Error("Unable to log in. Check your username and password.");
       }
 
       resetLoginRateLimit(clientIp);

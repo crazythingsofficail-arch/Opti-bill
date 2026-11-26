@@ -54,8 +54,8 @@ export function AuthScreen({
             key="login"
             fields={[
               {
-                name: "email",
-                label: "Username or Email",
+                name: "username",
+                label: "User",
                 type: "text",
                 required: true,
               },

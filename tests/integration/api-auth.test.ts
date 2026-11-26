@@ -66,4 +66,25 @@ describe("BUG-002, BUG-003, BUG-004: API Auth Guard & Password Security", () => 
     const body = await res.json();
     expect(body.error).toMatch(/Unable to log in/i);
   });
+
+  it("authenticates with APP_USER username and APP_PASSWORD", async () => {
+    const prevUser = process.env.APP_USER;
+    const prevPass = process.env.APP_PASSWORD;
+    process.env.APP_USER = "optixowner";
+    process.env.APP_PASSWORD = "CustomPassword#2026";
+    try {
+      const req = new NextRequest("http://localhost:3001/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "optixowner", password: "CustomPassword#2026" }),
+      });
+      const res = await POST(req, { params: Promise.resolve({ resource: "login" }) });
+      expect(res.status).toBe(200);
+    } finally {
+      if (prevUser === undefined) delete process.env.APP_USER;
+      else process.env.APP_USER = prevUser;
+      if (prevPass === undefined) delete process.env.APP_PASSWORD;
+      else process.env.APP_PASSWORD = prevPass;
+    }
+  });
 });

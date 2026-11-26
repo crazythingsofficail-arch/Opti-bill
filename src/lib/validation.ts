@@ -21,18 +21,27 @@ const optionalGstin = z
   .refine((v) => !v || gstinValid(v), "Invalid GSTIN or checksum");
 export const money = z.number().int().min(0).max(100000000000000);
 const date = z.iso.date();
-export const loginSchema = z.object({
-  email: z
-    .string()
-    .min(1)
-    .max(128)
-    .transform((val) => {
-      const trimmed = val.trim();
-      return trimmed.includes("@") ? trimmed : `${trimmed}@opti-x.in`;
-    }),
-  password: z.string().min(1).max(128),
-});
-export const signupSchema = loginSchema.extend({
+export const loginSchema = z
+  .object({
+    username: z.string().trim().min(1).max(128).optional(),
+    user: z.string().trim().min(1).max(128).optional(),
+    email: z.string().trim().min(1).max(128).optional(),
+    password: z.string().min(1).max(128),
+  })
+  .transform((val, ctx) => {
+    const identifier = val.username || val.user || val.email || "";
+    if (!identifier) {
+      ctx.addIssue({
+        code: "custom",
+        message: "User is required",
+        path: ["username"],
+      });
+      return z.NEVER;
+    }
+    return { identifier, password: val.password };
+  });
+export const signupSchema = z.object({
+  email: z.email(),
   password: z
     .string()
     .min(12)
