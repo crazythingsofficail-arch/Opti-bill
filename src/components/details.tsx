@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, ArrowUpRight, Printer, Download } from "lucide-react";
 import { api, displayDate } from "@/lib/client";
-import { formatMoney } from "@/lib/money";
+import { formatMoney, parseMoney } from "@/lib/money";
 import type {
   Customer,
   Prescription,
@@ -189,9 +189,15 @@ export function CustomerDetail({ id }: { id: string }) {
         action={
           <div className="row wrap">
             {profile.role !== "optometrist" && (
-              <Button variant="secondary" onClick={() => setEdit(true)}>
-                Edit details
-              </Button>
+              <>
+                <Link className="button primary" href={`/orders/new?customer=${id}`}>
+                  <Plus size={16} />
+                  Book order
+                </Link>
+                <Button variant="secondary" onClick={() => setEdit(true)}>
+                  Edit details
+                </Button>
+              </>
             )}
             <Button onClick={() => setRx(true)}>
               <Plus size={16} />
@@ -251,7 +257,7 @@ export function CustomerDetail({ id }: { id: string }) {
                         href={
                           i.status === "draft"
                             ? `/new-bill?draft=${i.id}`
-                            : `/print/${i.id}`
+                            : `/invoices/${i.id}`
                         }
                       >
                         {i.invoice_no || "Draft"}
@@ -312,20 +318,50 @@ export function CustomerDetail({ id }: { id: string }) {
             )}
           </Card>
           <Card>
-            <h2 style={{ marginBottom: 18 }}>Orders</h2>
+            <div className="card-heading">
+              <h2>Orders & Bookings</h2>
+              {profile.role !== "optometrist" && (
+                <Link className="text-link" href={`/orders/new?customer=${id}`}>
+                  + Book order
+                </Link>
+              )}
+            </div>
             {d.orders.length ? (
-              d.orders.map((o) => (
-                <div
-                  className="order-card"
-                  key={o.id}
-                  style={{ display: "block" }}
-                >
-                  <strong>{o.order_no}</strong>
-                  <small>
-                    {o.status} · {displayDate(o.promised_date)}
-                  </small>
-                </div>
-              ))
+              <div className="small-stack">
+                {d.orders.map((o) => (
+                  <div
+                    className="bill-item"
+                    key={o.id}
+                    style={{ padding: "12px 14px" }}
+                  >
+                    <div className="row between" style={{ alignItems: "center" }}>
+                      <Link href={`/orders/${o.id}`} style={{ fontWeight: 700 }}>
+                        {o.order_no}
+                      </Link>
+                      <Badge>{o.status}</Badge>
+                    </div>
+                    <small className="muted" style={{ display: "block", marginTop: 4 }}>
+                      {o.promised_date ? `Due ${displayDate(o.promised_date)} · ` : ""}
+                      Total {formatMoney(o.grand_total ?? 0)} · Paid {formatMoney(o.amount_paid ?? 0)} · Balance{" "}
+                      <strong>{formatMoney(o.balance_due ?? 0)}</strong>
+                    </small>
+                    <div className="row wrap" style={{ gap: 8, marginTop: 10 }}>
+                      <Link className="button primary" href={`/orders/${o.id}`}>
+                        {o.status !== "Delivered" || (o.balance_due ?? 0) > 0
+                          ? "Collect balance & deliver"
+                          : "Open order"}
+                      </Link>
+                      {o.invoice_id && (
+                        <Link className="button secondary" href={`/print/${o.invoice_id}`}>
+                          {o.is_booking && (o.status !== "Delivered" || (o.balance_due ?? 0) > 0)
+                            ? "Booking Bill"
+                            : "View Bill"}
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
               <p className="muted">No orders yet.</p>
             )}
@@ -779,6 +815,174 @@ export function InvoiceDetail({ id }: { id: string }) {
     </>
   );
 }
+function OrderDeliveryPanel({
+  order,
+  invoice,
+  payments,
+  onCompleted,
+}: {
+  order: Order;
+  invoice: Invoice | undefined;
+  payments: Payment[];
+  onCompleted: () => void;
+}) {
+  const toast = useToast();
+  const [amount, setAmount] = useState(
+    invoice ? String((invoice.balance_due || 0) / 100) : "0",
+  );
+  const [mode, setMode] = useState("cash");
+  const [referenceNo, setReferenceNo] = useState("");
+  const [markDelivered, setMarkDelivered] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function settle(printAfter: boolean) {
+    try {
+      setErr("");
+      setBusy(true);
+      const amountPaise = parseMoney(amount || "0");
+      if (invoice && amountPaise > invoice.balance_due) {
+        throw new Error("Payment exceeds remaining balance");
+      }
+      const res = await api<{ orderId: string; invoiceId: string | null }>(
+        "complete-order",
+        {
+          order_id: order.id,
+          amount_paise: amountPaise,
+          mode,
+          reference_no: referenceNo.trim(),
+          mark_delivered: markDelivered,
+        },
+      );
+      toast("Order updated & payment saved");
+      if (printAfter && (res.invoiceId || invoice?.id)) {
+        window.location.assign(`/print/${res.invoiceId || invoice!.id}`);
+        return;
+      }
+      onCompleted();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Unable to update order");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <div className="card-heading">
+        <div>
+          <h2>Customer Revisit — Remaining Payment & Delivery</h2>
+          <p className="section-note">
+            Collect remaining balance, take a photo of the product, mark delivered, and print the final bill.
+          </p>
+        </div>
+        <Badge>{order.status}</Badge>
+      </div>
+
+      {invoice && (
+        <div className="notice" style={{ marginBottom: 18 }}>
+          <div className="summary-line">
+            <span>Bill ({invoice.invoice_no || "Draft"}) Total</span>
+            <strong>{formatMoney(invoice.grand_total)}</strong>
+          </div>
+          <div className="summary-line">
+            <span>Paid / Advance received</span>
+            <strong>{formatMoney(invoice.amount_paid)}</strong>
+          </div>
+          <div className="summary-line">
+            <strong>Remaining Balance Due</strong>
+            <strong>{formatMoney(invoice.balance_due)}</strong>
+          </div>
+        </div>
+      )}
+
+      {!!payments.length && (
+        <div style={{ marginBottom: 16 }}>
+          <small className="muted" style={{ display: "block", marginBottom: 6 }}>
+            Payments recorded:
+          </small>
+          {payments.map((p) => (
+            <div className="summary-line" key={p.id}>
+              <span>
+                {displayDate(p.paid_at)} · {p.mode.toUpperCase()} {p.reference_no ? `(${p.reference_no})` : ""}
+              </span>
+              <span>{formatMoney(p.amount_paise)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {err && (
+        <p className="notice error-text" role="alert" style={{ marginBottom: 14 }}>
+          {err}
+        </p>
+      )}
+
+      <div className="form-grid" style={{ marginBottom: 18 }}>
+        <Field label="Remaining cost paid now (₹)">
+          <Input
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.00"
+          />
+        </Field>
+        <Field label="Mode of payment">
+          <select value={mode} onChange={(e) => setMode(e.target.value)}>
+            <option value="cash">Cash</option>
+            <option value="upi">UPI</option>
+            <option value="card">Card</option>
+            <option value="bank">Bank transfer</option>
+            <option value="other">Other</option>
+          </select>
+        </Field>
+        <Field label="Reference (optional)">
+          <Input
+            value={referenceNo}
+            onChange={(e) => setReferenceNo(e.target.value)}
+            placeholder="UPI / Card ref"
+          />
+        </Field>
+        <label className="field-checkbox" style={{ alignSelf: "end" }}>
+          <input
+            type="checkbox"
+            checked={markDelivered}
+            onChange={(e) => setMarkDelivered(e.target.checked)}
+          />
+          <span>Mark order as Delivered</span>
+        </label>
+      </div>
+
+      <div style={{ marginBottom: 18 }}>
+        <ImageUploader
+          orderId={order.id}
+          title="Take / Upload Delivery Photo"
+          description="Take a photo with camera or upload before printing the final bill."
+        />
+      </div>
+
+      <div className="row wrap" style={{ gap: 10 }}>
+        <Button
+          type="button"
+          disabled={busy}
+          onClick={() => void settle(true)}
+        >
+          <Printer size={16} />
+          {busy ? "Saving…" : "Save, Deliver & Print Bill"}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={busy}
+          onClick={() => void settle(false)}
+        >
+          Save & Update
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 export function OrderDetail({ id }: { id: string }) {
   const toast = useToast();
   const result = useQuery({
@@ -788,6 +992,7 @@ export function OrderDetail({ id }: { id: string }) {
         order: Order;
         items: OrderItem[];
         invoices: Invoice[];
+        payments?: Payment[];
         prescription: Prescription | null;
       }>(`order-detail?id=${id}`),
   });
@@ -796,25 +1001,48 @@ export function OrderDetail({ id }: { id: string }) {
     return (
       <ErrorState error={result.error} retry={() => void result.refetch()} />
     );
-  const { order: o, items, invoices, prescription } = result.data!;
+  const { order: o, items, invoices, payments = [], prescription } = result.data!;
+  const primaryInvoice = invoices.find((i) => i.status === "finalised") || invoices[0];
   return (
     <>
       <PageTitle
-        eyebrow="JOB CARD"
+        eyebrow="JOB CARD & DELIVERY"
         title={o.order_no}
-        description={`${o.customers?.name || ""} · Due ${displayDate(o.promised_date)}`}
+        description={`${o.customers?.name || ""} ${o.customers?.phone ? `· ${o.customers.phone}` : ""} · Due ${displayDate(o.promised_date)}`}
         action={
-          invoices.find((i) => i.status === "finalised") && (
-            <Link
-              className="button primary"
-              href={`/print/${invoices.find((i) => i.status === "finalised")!.id}?layout=job`}
-            >
-              <Printer size={16} />
-              Lab job card
-            </Link>
-          )
+          <div className="row wrap" style={{ gap: 8 }}>
+            {o.customer_id && (
+              <Link className="button secondary" href={`/customers/${o.customer_id}`}>
+                Customer profile
+              </Link>
+            )}
+            {primaryInvoice && (
+              <>
+                <Link className="button secondary" href={`/print/${primaryInvoice.id}`}>
+                  <Printer size={16} />
+                  Print Bill
+                </Link>
+                <Link
+                  className="button primary"
+                  href={`/print/${primaryInvoice.id}?layout=job`}
+                >
+                  <Printer size={16} />
+                  Lab job card
+                </Link>
+              </>
+            )}
+          </div>
         }
       />
+      <div style={{ marginBottom: 22 }}>
+        <OrderDeliveryPanel
+          key={`${o.id}-${primaryInvoice?.balance_due ?? 0}-${o.status}`}
+          order={o}
+          invoice={primaryInvoice}
+          payments={payments}
+          onCompleted={() => void result.refetch()}
+        />
+      </div>
       <div className="two-column">
         <div className="stack">
           <Card>
@@ -831,6 +1059,7 @@ export function OrderDetail({ id }: { id: string }) {
                     l.lens_index,
                     l.coatings,
                     l.tint,
+                    ...(l.specs ? Object.values(l.specs).filter(Boolean) : []),
                   ]
                     .filter(Boolean)
                     .join(" · ")}
@@ -841,9 +1070,6 @@ export function OrderDetail({ id }: { id: string }) {
               </div>
             ))}
             {prescription && <RxTable rx={prescription} />}
-            <div style={{ marginTop: 20 }}>
-              <ImageUploader orderId={o.id} />
-            </div>
           </Card>
           <Card>
             <h2 style={{ marginBottom: 18 }}>Associated bills</h2>
@@ -857,7 +1083,7 @@ export function OrderDetail({ id }: { id: string }) {
                     : `/print/${i.id}`
                 }
               >
-                {i.invoice_no || "Draft"} · {i.display_status}
+                {i.invoice_no || "Draft"} · {i.display_status} · Balance {formatMoney(i.balance_due)}
               </Link>
             ))}
           </Card>

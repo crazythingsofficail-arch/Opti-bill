@@ -318,6 +318,20 @@ export async function renderInvoicePdf(
     job = layout === "job",
     rxOnly = layout === "prescription";
   const money = !job && !rxOnly;
+  const isBookingBill = Boolean(
+    i.type === "tax_invoice" &&
+      i.is_booking &&
+      (order?.status !== "Delivered" || i.balance_due > 0),
+  );
+  const billTitle = job
+    ? "Lab job card"
+    : rxOnly
+      ? "Prescription"
+      : isBookingBill
+        ? "Booking Bill"
+        : i.type === "tax_invoice"
+          ? "Bill"
+          : i.type.replaceAll("_", " ").toUpperCase();
   const width = thermal ? 226.77 : undefined;
   return renderToBuffer(
     <Document title={i.invoice_no || "Opti-X"} author={shop.name}>
@@ -375,15 +389,7 @@ export async function renderInvoicePdf(
           {shop.gstin && <Text style={s.muted}>GSTIN: {shop.gstin}</Text>}
         </View>
         <View style={s.section}>
-          <Text style={s.title}>
-            {job
-              ? "Lab job card"
-              : rxOnly
-                ? "Prescription"
-                : i.type === "tax_invoice"
-                  ? "Bill"
-                  : i.type.replaceAll("_", " ").toUpperCase()}
-          </Text>
+          <Text style={s.title}>{billTitle}</Text>
           <View style={s.row}>
             <Text>{job ? order.order_no : i.invoice_no}</Text>
             <Text>{dt(i.finalised_at)}</Text>
@@ -518,9 +524,13 @@ export async function renderInvoicePdf(
                   : []),
                 ["Round off", i.round_off],
                 ["Grand total", i.grand_total],
-                ["Paid", i.amount_paid],
+                [isBookingBill ? "Advance paid" : "Paid", i.amount_paid],
                 [
-                  i.refund_due ? "Refund due" : "Balance",
+                  i.refund_due
+                    ? "Refund due"
+                    : isBookingBill && i.balance_due > 0
+                      ? "Remaining balance"
+                      : "Balance",
                   i.refund_due || i.balance_due,
                 ],
               ].map(([label, value]) => (

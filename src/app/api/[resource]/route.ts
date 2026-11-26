@@ -43,6 +43,9 @@ import {
   saveDraft,
   getDraft,
   finaliseInvoice,
+  bookOrder,
+  completeOrder,
+  enrichOrderWithInvoice,
   searchInvoices,
   searchOrders,
   getDashboardStats,
@@ -304,7 +307,9 @@ export async function GET(request: NextRequest, { params }: Params) {
 
       const prescriptions = getPrescriptionsForCustomer(query.id);
       const invoices = store.invoices.filter((i) => i.customer_id === query.id);
-      const orders = store.orders.filter((o) => o.customer_id === query.id);
+      const orders = store.orders
+        .filter((o) => o.customer_id === query.id)
+        .map((o) => enrichOrderWithInvoice(o, store));
       return success({ customer, prescriptions, invoices, orders });
     }
 
@@ -360,15 +365,17 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     if (resource === "order-detail") {
       if (!query.id) throw new Error("Order ID required");
-      const order = store.orders.find((o) => o.id === query.id);
-      if (!order) throw new Error("Order not found");
+      const rawOrder = store.orders.find((o) => o.id === query.id);
+      if (!rawOrder) throw new Error("Order not found");
+      const order = enrichOrderWithInvoice(rawOrder, store);
       const invoices = store.invoices.filter((i) => i.order_id === query.id);
       const invoice = invoices[0];
       const items = invoice ? store.invoice_items.filter((i) => i.invoice_id === invoice.id) : [];
+      const payments = invoice ? store.payments.filter((p) => p.invoice_id === invoice.id) : [];
       const prescription = order.prescription_id
         ? store.prescriptions.find((p) => p.id === order.prescription_id)
         : null;
-      return success({ order, items, invoices, prescription });
+      return success({ order, items, invoices, payments, prescription });
     }
 
     if (resource === "draft") {
@@ -788,9 +795,23 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     if (resource === "finalise") {
       const p = v.finaliseSchema.parse(body);
-      const invId = finaliseInvoice(p.id, p.key, p.payments);
+      const invId = finaliseInvoice(p.id, p.key, p.payments, p.is_booking);
       await persistStore();
       return success({ id: invId });
+    }
+
+    if (resource === "book-order") {
+      const p = v.bookOrderSchema.parse(body);
+      const result = bookOrder(p);
+      await persistStore();
+      return success(result);
+    }
+
+    if (resource === "complete-order") {
+      const p = v.completeOrderSchema.parse(body);
+      const result = completeOrder(p);
+      await persistStore();
+      return success(result);
     }
 
     if (resource === "payment") {

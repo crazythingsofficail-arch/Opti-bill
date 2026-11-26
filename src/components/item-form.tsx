@@ -124,13 +124,12 @@ export function DynamicItemForm({
 
       if (activeTab === "Frame only") {
         const pricePaise = parseMoney(framePrice || "0");
-        if (pricePaise <= 0) throw new Error("Please enter a valid frame price");
         const desc = `${frameBrand} ${frameModel}`.trim() || "Spectacle Frame";
         const item = itemSchema.parse({
           item_type: "frame",
           description: desc,
           frame_id: frameId || null,
-          frame_model_no: frameModel || null,
+          frame_model_no: frameModel || "",
           qty: Number(frameQty) || 1,
           unit: "piece",
           unit_price_paise: pricePaise,
@@ -143,7 +142,6 @@ export function DynamicItemForm({
 
       if (activeTab === "Lens only") {
         const pricePaise = parseMoney(lensPrice || "0");
-        if (pricePaise <= 0) throw new Error("Please enter a valid lens price");
         const desc =
           [lensBrand, lensType, lensIndex, coatings]
             .filter(Boolean)
@@ -152,12 +150,12 @@ export function DynamicItemForm({
           item_type: "lens",
           description: desc,
           lens_id: lensId || null,
-          lens_brand: lensBrand || null,
-          lens_code: lensCode || null,
-          lens_type: lensType || null,
-          lens_index: lensIndex || null,
-          coatings: coatings || null,
-          tint: tint || null,
+          lens_brand: lensBrand || "",
+          lens_code: lensCode || "",
+          lens_type: lensType || "",
+          lens_index: lensIndex || "",
+          coatings: coatings || "",
+          tint: tint || "",
           qty: Number(lensQty) || 1,
           unit: "pair",
           unit_price_paise: pricePaise,
@@ -295,12 +293,11 @@ export function DynamicItemForm({
               placeholder="e.g. Ray-Ban, Fastrack, Oakley"
             />
           </Field>
-          <Field label="Model / SKU">
+          <Field label="Model / SKU (optional)">
             <Input
               value={frameModel}
               onChange={(e) => setFrameModel(e.target.value)}
               placeholder="e.g. RB3025, OX-102"
-              required
             />
           </Field>
           <Field label="Quantity">
@@ -366,12 +363,11 @@ export function DynamicItemForm({
               </Field>
             </div>
           )}
-          <Field label="Lens brand">
+          <Field label="Lens brand (optional)">
             <Input
               value={lensBrand}
               onChange={(e) => setLensBrand(e.target.value)}
               placeholder="e.g. Crizal, Essilor, Zeiss, Prime"
-              required
             />
           </Field>
           <Field label="Lens type">

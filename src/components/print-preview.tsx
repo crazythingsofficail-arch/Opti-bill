@@ -82,6 +82,21 @@ export function PrintPreview({
     gstin: null,
   };
   const money = layout === "a4" || layout === "thermal";
+  const isBookingBill = Boolean(
+    i.type === "tax_invoice" &&
+      i.is_booking &&
+      (order?.status !== "Delivered" || i.balance_due > 0),
+  );
+  const billTitle =
+    layout === "job"
+      ? "Lab job card"
+      : layout === "prescription"
+        ? "Prescription"
+        : isBookingBill
+          ? "Booking Bill"
+          : i.type === "tax_invoice"
+            ? "Bill"
+            : i.type.replaceAll("_", " ").toUpperCase();
   return (
     <>
       <div className="no-print">
@@ -105,6 +120,11 @@ export function PrintPreview({
               <Link className="button secondary" href={`/invoices/${i.id}`}>
                 Manage invoice
               </Link>
+              {order?.id && order.id !== "ord-default" && (
+                <Link className="button secondary" href={`/orders/${order.id}`}>
+                  {isBookingBill ? "Collect balance & deliver" : "Open order"}
+                </Link>
+              )}
               <Link
                 className="button secondary"
                 href="/customers?filter=completed"
@@ -255,15 +275,7 @@ export function PrintPreview({
         <section className="print-section">
           <div className="print-flex">
             <div>
-              <h2>
-                {layout === "job"
-                  ? "Lab job card"
-                  : layout === "prescription"
-                    ? "Prescription"
-                    : i.type === "tax_invoice"
-                      ? "Bill"
-                      : i.type.replaceAll("_", " ").toUpperCase()}
-              </h2>
+              <h2>{billTitle}</h2>
               <strong>
                 {layout === "job" ? order.order_no : i.invoice_no}
               </strong>
@@ -370,9 +382,13 @@ export function PrintPreview({
                   : []),
                 ["Round off", i.round_off],
                 ["Grand total", i.grand_total],
-                ["Paid", i.amount_paid],
+                [isBookingBill ? "Advance paid" : "Paid", i.amount_paid],
                 [
-                  i.refund_due ? "Refund due" : "Balance",
+                  i.refund_due
+                    ? "Refund due"
+                    : isBookingBill && i.balance_due > 0
+                      ? "Remaining balance"
+                      : "Balance",
                   i.refund_due || i.balance_due,
                 ],
               ].map(([label, amount]) => (

@@ -174,6 +174,10 @@ export function Dashboard({ initial }: { initial?: DashboardData }) {
                   <Package size={18} className="muted" />
                 </div>
                 <div className="small-stack" style={{ marginTop: 12 }}>
+                  <Link href="/orders/new" className="button secondary" style={{ justifyContent: "space-between" }}>
+                    <span>Book frame / lens order</span>
+                    <ArrowUpRight size={16} />
+                  </Link>
                   <Link href="/customers" className="button secondary" style={{ justifyContent: "space-between" }}>
                     <span>Register new customer</span>
                     <ArrowUpRight size={16} />

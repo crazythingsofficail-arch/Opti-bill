@@ -636,7 +636,12 @@ export function getDraft(id: string) {
 }
 
 // Invoices & Billing
-export function finaliseInvoice(invoiceId: string, key: string, payments: any[]) {
+export function finaliseInvoice(
+  invoiceId: string,
+  key: string,
+  payments: any[],
+  isBookingFlag?: boolean,
+) {
   const store = getStore();
 
   // Idempotency guard: return existing finalized invoice if already created
@@ -734,6 +739,7 @@ export function finaliseInvoice(invoiceId: string, key: string, payments: any[])
     status: "finalised",
     display_status: "finalised",
     payment_status: balanceDue <= 0 ? "paid" : totalPaid > 0 ? "partial" : "unpaid",
+    is_booking: Boolean(isBookingFlag ?? draft.is_booking),
     customer_snapshot: customerSnapshot,
     shop_snapshot: store.shop,
     place_of_supply_state_code: draft.place_of_supply_state_code || store.shop.state_code,
@@ -809,7 +815,7 @@ export function finaliseInvoice(invoiceId: string, key: string, payments: any[])
     prescription_id: draft.prescription_id || null,
     order_no: `ORD-${invNo}`,
     status: "Ordered",
-    lab_name: "In-house Lab",
+    lab_name: draft.lab_name || "In-house Lab",
     lab_sent_at: null,
     promised_date: draft.promised_date || null,
     delivered_at: null,
@@ -960,20 +966,32 @@ export function searchInvoices(
   return { rows, count, page };
 }
 
+export function enrichOrderWithInvoice(o: Order, store: LocalStore): Order {
+  const cust = store.customers.find((c) => c.id === o.customer_id);
+  const inv =
+    store.invoices.find((i) => i.order_id === o.id && i.type !== "credit_note") ||
+    store.invoices.find((i) => i.order_id === o.id);
+  return {
+    ...o,
+    customers: cust ? { name: cust.name, phone: cust.phone } : undefined,
+    invoice_id: inv?.id || null,
+    invoice_no: inv?.invoice_no || null,
+    grand_total: inv?.grand_total ?? 0,
+    amount_paid: inv?.amount_paid ?? 0,
+    balance_due: inv?.balance_due ?? 0,
+    is_booking: Boolean(inv?.is_booking),
+  };
+}
+
 export function searchOrders(q: string, page = 1, limit = 50) {
   const store = getStore();
   const query = q.trim().toLowerCase();
-  let list = store.orders.map((o) => {
-    const cust = store.customers.find((c) => c.id === o.customer_id);
-    return {
-      ...o,
-      customers: cust ? { name: cust.name, phone: cust.phone } : null,
-    };
-  });
+  let list = store.orders.map((o) => enrichOrderWithInvoice(o, store));
 
   if (query) {
     list = list.filter(
       (o) =>
+        o.order_no.toLowerCase().includes(query) ||
         o.customers?.name.toLowerCase().includes(query) ||
         o.customers?.phone?.includes(query) ||
         o.status.toLowerCase().includes(query),
@@ -984,6 +1002,156 @@ export function searchOrders(q: string, page = 1, limit = 50) {
   const start = (page - 1) * limit;
   const rows = list.slice(start, start + limit);
   return { rows, count, page };
+}
+
+export function bookOrder(input: {
+  customer_id?: string | null;
+  customer?: {
+    name: string;
+    phone: string;
+    age_years?: number | null;
+    city?: string;
+    gender?: string;
+  };
+  prescription?: Record<string, any> | null;
+  items: any[];
+  advance_paise: number;
+  payment_mode: string;
+  reference_no?: string;
+  promised_date?: string | null;
+  lab_name?: string;
+  notes?: string;
+}): { orderId: string; invoiceId: string; customerId: string } {
+  const store = getStore();
+  let customerId = input.customer_id || "";
+
+  if (!customerId) {
+    if (!input.customer) throw new Error("Customer details required");
+    // Reuse existing customer if phone number matches cleanly
+    const existingByPhone = store.customers.find(
+      (c) => c.phone && c.phone === input.customer!.phone,
+    );
+    if (existingByPhone) {
+      customerId = existingByPhone.id;
+    } else {
+      customerId = saveCustomer({
+        name: input.customer.name,
+        phone: input.customer.phone,
+        age_years: input.customer.age_years ?? null,
+        city: input.customer.city || "",
+        gender: input.customer.gender || "undisclosed",
+        state_code: store.shop.state_code || "",
+        consent_given: true,
+      });
+    }
+  }
+
+  let prescriptionId: string | null = null;
+  if (input.prescription) {
+    const rx = input.prescription;
+    const hasRxValues = [
+      rx.od_sph,
+      rx.od_cyl,
+      rx.od_add_power,
+      rx.os_sph,
+      rx.os_cyl,
+      rx.os_add_power,
+      rx.bin_pd,
+    ].some((v) => v != null && v !== "");
+    if (hasRxValues) {
+      prescriptionId = savePrescription({
+        ...rx,
+        customer_id: customerId,
+        test_date: new Date().toISOString().slice(0, 10),
+        examiner_name: rx.examiner_name || store.profile.full_name || "Optometrist",
+        source: rx.source || "in_shop",
+      });
+    }
+  }
+
+  const draftId = crypto.randomUUID();
+  const payments =
+    input.advance_paise > 0
+      ? [
+          {
+            amount_paise: input.advance_paise,
+            mode: input.payment_mode || "cash",
+            reference_no: input.reference_no || "Advance",
+            idempotency_key: crypto.randomUUID(),
+          },
+        ]
+      : [];
+
+  saveDraft(draftId, {
+    id: draftId,
+    customer_id: customerId,
+    prescription_id: prescriptionId,
+    place_of_supply_state_code: store.shop.state_code || "",
+    overall_discount_paise: 0,
+    promised_date: input.promised_date || null,
+    lab_name: input.lab_name || "In-house Lab",
+    notes: input.notes || "",
+    is_booking: true,
+    items: input.items,
+    payments,
+  });
+
+  const invoiceId = finaliseInvoice(draftId, crypto.randomUUID(), payments, true);
+  const inv = getStore().invoices.find((i) => i.id === invoiceId);
+  return {
+    orderId: inv?.order_id || "",
+    invoiceId,
+    customerId,
+  };
+}
+
+export function completeOrder(input: {
+  order_id: string;
+  amount_paise: number;
+  mode: string;
+  reference_no?: string;
+  mark_delivered?: boolean;
+  notes?: string;
+}): { orderId: string; invoiceId: string | null } {
+  const store = getStore();
+  const ord = store.orders.find((o) => o.id === input.order_id);
+  if (!ord) throw new Error("Order not found");
+
+  const inv =
+    store.invoices.find((i) => i.order_id === ord.id && i.type !== "credit_note") ||
+    store.invoices.find((i) => i.order_id === ord.id);
+
+  if (input.amount_paise > 0 && inv) {
+    if (input.amount_paise > inv.balance_due) {
+      throw new Error(
+        `Payment exceeds remaining balance (${inv.balance_due / 100})`,
+      );
+    }
+    store.payments.push({
+      id: crypto.randomUUID(),
+      shop_id: store.shop.id,
+      invoice_id: inv.id,
+      amount_paise: input.amount_paise,
+      mode: input.mode || "cash",
+      reference_no: input.reference_no || "Final payment",
+      paid_at: new Date().toISOString(),
+    });
+    inv.amount_paid += input.amount_paise;
+    inv.balance_due = Math.max(0, inv.grand_total - inv.amount_paid);
+    inv.payment_status =
+      inv.balance_due <= 0 ? "paid" : inv.amount_paid > 0 ? "partial" : "unpaid";
+  }
+
+  if (input.mark_delivered !== false) {
+    ord.status = "Delivered";
+    ord.delivered_at = new Date().toISOString();
+  }
+  if (input.notes !== undefined) {
+    ord.notes = input.notes;
+  }
+
+  saveStore(store);
+  return { orderId: ord.id, invoiceId: inv?.id || null };
 }
 
 export function getDashboardStats() {

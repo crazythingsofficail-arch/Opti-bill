@@ -386,6 +386,7 @@ export const itemSchema = z
       "other",
     ]),
     description: z.string().min(1).max(500),
+    specs: z.record(z.string(), z.string().nullable()).optional(),
     frame_id: uuid.nullish(),
     frame_model_no: optionalText,
     lens_id: uuid.nullish(),
@@ -427,6 +428,7 @@ export const draftSchema = z.object({
   overall_discount_paise: money.nullish().transform((v) => v ?? 0),
   promised_date: date.nullish().transform((v) => v ?? null),
   notes: text.nullish().transform((v) => v ?? ""),
+  is_booking: z.boolean().optional().default(false),
   items: z.array(itemSchema).max(100).default([]),
   payments: z.array(splitPaymentSchema).max(10).default([]),
 });
@@ -434,6 +436,50 @@ export const finaliseSchema = z.object({
   id: uuid,
   key: uuid,
   payments: z.array(splitPaymentSchema).max(10),
+  is_booking: z.boolean().optional(),
+});
+export const bookOrderSchema = z.object({
+  customer_id: uuid.nullish(),
+  customer: z
+    .object({
+      name: z.string().trim().min(1, "Customer name is required").max(120),
+      phone,
+      age_years: z.number().int().min(0).max(130).nullish(),
+      city: optionalText,
+      gender: z.enum(["male", "female", "other", "undisclosed"]).default("undisclosed"),
+    })
+    .optional(),
+  prescription: z
+    .object({
+      examiner_name: text.optional(),
+      source: text.optional(),
+      od_sph: quarter,
+      od_cyl: quarter,
+      od_axis: z.number().int().min(1).max(180).nullish().transform((v) => v ?? null),
+      od_add_power: z.number().min(0.25).max(4).multipleOf(0.25).nullish().transform((v) => v ?? null),
+      os_sph: quarter,
+      os_cyl: quarter,
+      os_axis: z.number().int().min(1).max(180).nullish().transform((v) => v ?? null),
+      os_add_power: z.number().min(0.25).max(4).multipleOf(0.25).nullish().transform((v) => v ?? null),
+      bin_pd: z.number().min(20).max(90).nullish().transform((v) => v ?? null),
+      remarks: optionalText,
+    })
+    .nullish(),
+  items: z.array(itemSchema).min(1, "Add at least one frame or lens item"),
+  advance_paise: money.default(0),
+  payment_mode: z.enum(["cash", "upi", "card", "bank", "other"]).default("cash"),
+  reference_no: text.default(""),
+  promised_date: date.nullish().transform((v) => v ?? null),
+  lab_name: text.default(""),
+  notes: text.default(""),
+});
+export const completeOrderSchema = z.object({
+  order_id: uuid,
+  amount_paise: money.default(0),
+  mode: z.enum(["cash", "upi", "card", "bank", "other"]).default("cash"),
+  reference_no: text.default(""),
+  mark_delivered: z.boolean().default(true),
+  notes: text.optional(),
 });
 export const paymentSchema = splitPaymentSchema.extend({ invoice_id: uuid });
 export const orderSchema = z.object({

@@ -938,10 +938,15 @@ export function Orders() {
         title="Orders"
         description="A clear path from prescription to a perfect fit."
         action={
-          <Link href="/new-bill" className="button primary">
-            <Plus size={16} />
-            New order
-          </Link>
+          <div className="row wrap" style={{ gap: "8px" }}>
+            <Link href="/orders/new" className="button primary">
+              <Plus size={16} />
+              Book order
+            </Link>
+            <Link href="/new-bill" className="button secondary">
+              Quick bill
+            </Link>
+          </div>
         }
       />
       <div className="filters">
@@ -989,7 +994,19 @@ export function Orders() {
                       className="order-card"
                       style={{ display: "block", textDecoration: "none", color: "inherit" }}
                     >
-                      <strong>{o.order_no}</strong>
+                      <div className="row between" style={{ alignItems: "center" }}>
+                        <strong>{o.order_no}</strong>
+                        {o.balance_due != null && o.balance_due > 0 ? (
+                          <Badge>Due {formatMoney(o.balance_due)}</Badge>
+                        ) : o.grand_total ? (
+                          <Badge>Paid</Badge>
+                        ) : null}
+                      </div>
+                      {o.customers?.name && (
+                        <small style={{ fontWeight: 600 }}>
+                          {o.customers.name} {o.customers.phone ? `· ${o.customers.phone}` : ""}
+                        </small>
+                      )}
                       <small>Due {displayDate(o.promised_date)}</small>
                       <small>{o.lab_name || "Lab not assigned"}</small>
                     </Link>

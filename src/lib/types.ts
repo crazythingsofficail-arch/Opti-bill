@@ -137,11 +137,18 @@ export type Order = {
   notes: string | null;
   created_at: string;
   customers?: Pick<Customer, "name" | "phone">;
+  invoice_id?: string | null;
+  invoice_no?: string | null;
+  grand_total?: number;
+  amount_paid?: number;
+  balance_due?: number;
+  is_booking?: boolean;
 };
 export type OrderItem = {
   id?: string;
   item_type: string;
   description: string;
+  specs?: Record<string, string | null>;
   frame_id?: string | null;
   frame_model_no: string;
   lens_id?: string | null;
@@ -168,6 +175,7 @@ export type Invoice = {
   status: "draft" | "finalised" | "cancelled" | "credited";
   display_status: string;
   payment_status: string;
+  is_booking?: boolean;
   customer_snapshot: Partial<Customer> | null;
   shop_snapshot: Shop | null;
   place_of_supply_state_code: string;

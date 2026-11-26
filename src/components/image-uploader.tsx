@@ -37,14 +37,21 @@ export const compressWebp = compressImage;
 export function ImageUploader({
   orderId,
   onPhotoChange,
+  title = "Product / Lens photo",
+  description = "Capture with camera or upload a photo. Compressed to JPG, up to 300 KB.",
 }: {
   orderId: string | null;
   onPhotoChange?: (url: string | null) => void;
+  title?: string;
+  description?: string;
 }) {
   const [preview, setPreview] = useState<string | null>(null),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [camOpen, setCamOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null),
-    camera = useRef<HTMLInputElement>(null);
+    camera = useRef<HTMLInputElement>(null),
+    videoRef = useRef<HTMLVideoElement>(null),
+    streamRef = useRef<MediaStream | null>(null);
   const toast = useToast();
   useEffect(() => {
     if (orderId)
@@ -55,6 +62,60 @@ export function ImageUploader({
         })
         .catch(() => undefined);
   }, [orderId]);
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+  function stopWebcam() {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setCamOpen(false);
+  }
+  async function openCamera() {
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.mediaDevices &&
+      typeof navigator.mediaDevices.getUserMedia === "function"
+    ) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false,
+        });
+        streamRef.current = stream;
+        setCamOpen(true);
+        requestAnimationFrame(() => {
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            void videoRef.current.play();
+          }
+        });
+        return;
+      } catch {
+        // Fallback to native file/camera input if webcam permission denied or unavailable
+      }
+    }
+    camera.current?.click();
+  }
+  async function captureFromWebcam() {
+    const video = videoRef.current;
+    if (!video) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.9),
+    );
+    stopWebcam();
+    if (blob) {
+      const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
+      await upload(file);
+    }
+  }
   async function upload(file: File | undefined) {
     if (!file || !orderId) return;
     try {
@@ -72,7 +133,7 @@ export function ImageUploader({
       const signed = await api<{ url: string }>(`lens-photo?id=${orderId}`);
       setPreview(signed.url);
       onPhotoChange?.(signed.url);
-      toast("Lens photo saved");
+      toast("Photo saved");
     } catch (e) {
       toast(e instanceof Error ? e.message : "Upload failed");
     } finally {
@@ -83,12 +144,43 @@ export function ImageUploader({
   }
   return (
     <div className="image-uploader">
-      <h3>One lens photo</h3>
-      <p className="section-note">
-        Capture the lens packet or upload a photo. Compressed to JPG, up to 300
-        KB.
-      </p>
-      {preview && <img src={preview} alt="Lens packet" />}
+      <h3>{title}</h3>
+      <p className="section-note">{description}</p>
+      {preview && <img src={preview} alt="Captured eyewear" />}
+      {camOpen && (
+        <div
+          style={{
+            margin: "12px 0",
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid var(--border)",
+            background: "var(--surface)",
+          }}
+        >
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              borderRadius: 8,
+              display: "block",
+              margin: "0 auto 10px",
+              background: "#000",
+            }}
+          />
+          <div className="row" style={{ justifyContent: "center", gap: 10 }}>
+            <Button type="button" onClick={() => void captureFromWebcam()}>
+              <Camera size={16} />
+              Take Snapshot
+            </Button>
+            <Button type="button" variant="ghost" onClick={stopWebcam}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
       <input
         ref={input}
         type="file"
@@ -118,10 +210,10 @@ export function ImageUploader({
           variant="ghost"
           type="button"
           disabled={!orderId || busy}
-          onClick={() => camera.current?.click()}
+          onClick={() => void openCamera()}
         >
           <Camera size={17} />
-          Camera
+          Take photo
         </Button>
         {preview && (
           <Button
