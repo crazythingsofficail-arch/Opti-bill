@@ -1,7 +1,14 @@
 import type { NextConfig } from "next";
 const config: NextConfig = {
   poweredByHeader: false,
-  serverExternalPackages: ["@react-pdf/renderer"],
+  serverExternalPackages: ["@react-pdf/renderer", "pdfkit"],
+  outputFileTracingIncludes: {
+    "/api/[resource]": [
+      "./node_modules/pdfkit/js/**/*",
+      "./public/fonts/**/*",
+      "./public/logo.png",
+    ],
+  },
   async headers() {
     return [
       {
