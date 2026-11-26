@@ -75,9 +75,9 @@ describe("BUG-015: Null-safe print preview & PDF generation", () => {
   };
 
   it("renders PrintPreview without crashing when customer_snapshot or shop_snapshot is null", () => {
-    expect(() => {
-      renderToString(<PrintPreview data={baseData} layout="a4" />);
-    }).not.toThrow();
+    const html = renderToString(<PrintPreview data={baseData} layout="a4" />);
+    expect(html).not.toContain("Made by Mudasir Shariff");
+    expect(html).toContain("@page{size:A4 portrait;margin:0}");
   });
 
   it("renders PDF layouts without crashing when customer_snapshot or shop_snapshot is null", async () => {

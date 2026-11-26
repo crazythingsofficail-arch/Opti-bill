@@ -2324,10 +2324,17 @@ main {
     display: none !important;
   }
 
+  .workspace {
+    display: block !important;
+    min-height: 0 !important;
+    background: white !important;
+  }
+
   .main-shell,
   .collapsed .main-shell {
     margin: 0 !important;
     width: 100% !important;
+    background: white !important;
   }
 
   main {
@@ -2335,17 +2342,37 @@ main {
     padding: 0 !important;
     min-height: 0 !important;
     max-width: none !important;
+    width: 100% !important;
   }
 
-  .print-document,
-  .print-document.job,
+  .print-document {
+    box-shadow: none !important;
+    border: 0 !important;
+    width: 210mm !important;
+    max-width: 100% !important;
+    padding: 12mm 14mm !important;
+    margin: 0 auto !important;
+    box-sizing: border-box !important;
+  }
+
+  .print-document.job {
+    box-shadow: none !important;
+    border: 0 !important;
+    width: 148mm !important;
+    max-width: 100% !important;
+    padding: 10mm 12mm !important;
+    margin: 0 auto !important;
+    box-sizing: border-box !important;
+  }
+
   .print-document.thermal {
-    box-shadow: none;
-    border: 0;
-    padding: 0;
-    max-width: none;
-    width: 100%;
-    margin: 0;
+    box-shadow: none !important;
+    border: 0 !important;
+    width: 80mm !important;
+    max-width: 100% !important;
+    padding: 4mm !important;
+    margin: 0 auto !important;
+    box-sizing: border-box !important;
   }
 
   .print-table thead {
@@ -2361,18 +2388,7 @@ main {
   }
 
   .print-footer {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    border: 0;
-    background: white;
-    padding: 4mm 0 0;
-    font-size: 7px;
-  }
-
-  .print-document {
-    padding-bottom: 15mm !important;
+    display: none !important;
   }
 
   .print-header h1 {

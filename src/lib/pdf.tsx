@@ -370,12 +370,21 @@ export async function renderInvoicePdf(
           <Text style={[s.name, thermal ? { fontSize: 16 } : {}]}>
             {shop.name}
           </Text>
+          {(shop.legal_name && shop.legal_name !== shop.name) ||
+          [shop.address, shop.city, shop.state, shop.pincode].some(Boolean) ? (
+            <Text style={s.muted}>
+              {[
+                shop.legal_name && shop.legal_name !== shop.name ? shop.legal_name : "",
+                [shop.address, shop.city, shop.state, shop.pincode]
+                  .filter(Boolean)
+                  .join(", "),
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </Text>
+          ) : null}
           <Text style={s.muted}>
-            {shop.legal_name} · {shop.address}, {shop.city}, {shop.state}{" "}
-            {shop.pincode}
-          </Text>
-          <Text style={s.muted}>
-            {shop.phone} · {shop.email}
+            {[shop.phone, shop.email].filter(Boolean).join(" · ")}
           </Text>
           {shop.gstin && <Text style={s.muted}>GSTIN: {shop.gstin}</Text>}
         </View>
@@ -591,15 +600,6 @@ export async function renderInvoicePdf(
           )}
           <Text>Authorised signatory</Text>
         </View>
-        <Text
-          style={[
-            s.footer,
-            thermal ? { fontSize: 5.7, left: 8, right: 8 } : {},
-          ]}
-          fixed
-        >
-          {BRAND_FOOTER}
-        </Text>
       </Page>
     </Document>,
   );

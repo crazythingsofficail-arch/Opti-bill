@@ -264,6 +264,20 @@ export function CustomerForm({
     />
   );
 }
+function parsePrescriptionSource(raw?: string): {
+  type: "in_shop" | "external";
+  name: string;
+} {
+  if (!raw || raw === "in_shop" || raw === "In-store") {
+    return { type: "in_shop", name: "" };
+  }
+  if (raw === "external") return { type: "external", name: "" };
+  if (raw.startsWith("In shop: ")) return { type: "in_shop", name: raw.slice(9) };
+  if (raw.startsWith("External: ")) return { type: "external", name: raw.slice(10) };
+  if (raw.toLowerCase().includes("external")) return { type: "external", name: raw };
+  return { type: "in_shop", name: raw };
+}
+
 export function PrescriptionForm({
   customerId,
   initial,
@@ -276,6 +290,9 @@ export function PrescriptionForm({
   const { profile } = useWorkspace();
   const toast = useToast();
   const [error, setError] = useState("");
+  const parsedSrc = parsePrescriptionSource(initial?.source);
+  const [sourceType, setSourceType] = useState<"in_shop" | "external">(parsedSrc.type);
+  const [sourceName, setSourceName] = useState(parsedSrc.name);
   const defaults: Record<string, unknown> = {
     customer_id: customerId,
     test_date: today(),
@@ -351,6 +368,12 @@ export function PrescriptionForm({
           }
           if (!data.examiner_name) data.examiner_name = profile.full_name || "Optometrist";
           if (!data.test_date) data.test_date = today();
+          const trimmedSourceName = sourceName.trim();
+          data.source = trimmedSourceName
+            ? sourceType === "external"
+              ? `External: ${trimmedSourceName}`
+              : `In shop: ${trimmedSourceName}`
+            : sourceType;
           const parsed = prescriptionSchema.parse(data);
           const result = await api<{ id: string }>("prescriptions", {
             id: initial?.id,
@@ -379,10 +402,33 @@ export function PrescriptionForm({
           <Input {...register("examiner_name")} required />
         </Field>
         <Field label="Source">
-          <select {...register("source")}>
+          <select
+            value={sourceType}
+            onChange={(e) =>
+              setSourceType(e.target.value as "in_shop" | "external")
+            }
+          >
             <option value="in_shop">In shop</option>
             <option value="external">External</option>
           </select>
+        </Field>
+        <Field
+          label={
+            sourceType === "external"
+              ? "Source name (Clinic / Doctor)"
+              : "Source name (optional)"
+          }
+        >
+          <Input
+            value={sourceName}
+            onChange={(e) => setSourceName(e.target.value)}
+            placeholder={
+              sourceType === "external"
+                ? "e.g. City Eye Clinic / Dr. Sharma"
+                : "e.g. Main branch, Eye camp"
+            }
+            required={sourceType === "external"}
+          />
         </Field>
         <Field label="Valid until (optional)">
           <Input type="date" {...register("valid_until")} />

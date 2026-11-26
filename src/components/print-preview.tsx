@@ -14,7 +14,6 @@ import type { PrintData, Shop } from "@/lib/types";
 import type { PrintLayout } from "@/lib/pdf";
 import { formatMoney, amountInWords } from "@/lib/money";
 import { displayDate } from "@/lib/client";
-import { BRAND_FOOTER } from "@/lib/i18n";
 import { Button, PageTitle } from "./ui";
 export function PrintPreview({
   data,
@@ -228,11 +227,11 @@ export function PrintPreview({
             ))}
           </select>
           <span className="muted">
-            Browser printing: disable browser headers and footers.
+            Prints cleanly on {layout === "thermal" ? "80 mm thermal" : layout === "job" ? "A5" : "A4"} without browser headers or URLs.
           </span>
         </div>
       </div>
-      <style>{`@page{size:${layout === "thermal" ? "80mm auto" : layout === "job" ? "A5" : "A4"};margin:${layout === "thermal" ? "4mm" : "12mm"}}`}</style>
+      <style>{`@page{size:${layout === "thermal" ? "80mm auto" : layout === "job" ? "A5 portrait" : "A4 portrait"};margin:0}`}</style>
       <article className={`print-document ${layout}`}>
         <header className="print-header">
           {layout !== "thermal" && logo && (
@@ -251,12 +250,14 @@ export function PrintPreview({
             />
           )}
           <h1>{s.name}</h1>
-          <p>{s.legal_name}</p>
+          {s.legal_name && s.legal_name !== s.name && <p>{s.legal_name}</p>}
+          {[s.address, s.city, s.state, s.pincode].some(Boolean) && (
+            <p>
+              {[s.address, s.city, s.state, s.pincode].filter(Boolean).join(", ")}
+            </p>
+          )}
           <p>
-            {s.address}, {s.city}, {s.state} {s.pincode}
-          </p>
-          <p>
-            {s.phone} · {s.email}
+            {[s.phone, s.email].filter(Boolean).join(" · ")}
           </p>
           {s.gstin && <p>GSTIN: {s.gstin}</p>}
         </header>
@@ -510,7 +511,6 @@ export function PrintPreview({
           )}
           Authorised signatory
         </div>
-        <footer className="print-footer">{BRAND_FOOTER}</footer>
       </article>
     </>
   );
