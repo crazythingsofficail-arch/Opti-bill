@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { Plus, Search, Printer, Check } from "lucide-react";
+import Link from "next/link";
+import { Printer, Check, ChevronDown, ChevronUp, ArrowLeft } from "lucide-react";
 import { api, displayDate, today } from "@/lib/client";
 import { calculateInvoice, formatMoney, parseMoney } from "@/lib/money";
 import type { Customer, Frame, Lens, TaxCategory, OrderItem } from "@/lib/types";
@@ -14,7 +15,6 @@ import {
   Button,
   Field,
   Input,
-  SearchInput,
   SegmentedControl,
   Badge,
 } from "./ui";
@@ -46,6 +46,19 @@ const TINT_LIST = [
   "Polarized (Brown)",
   "Tinted (Sun)",
 ];
+const PAYMENT_MODES = [
+  ["cash", "Cash"],
+  ["upi", "UPI"],
+  ["card", "Card"],
+  ["bank", "Bank"],
+  ["other", "Other"],
+] as const;
+
+function addDaysIso(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 export function OrderBooking() {
   const { shop } = useWorkspace();
@@ -56,15 +69,20 @@ export function OrderBooking() {
   const [customerId, setCustomerId] = useState<string | null>(
     searchParams.get("customer") || null,
   );
-  const [custSearch, setCustSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [custName, setCustName] = useState("");
   const [custPhone, setCustPhone] = useState("");
   const [custAge, setCustAge] = useState("");
   const [custCity, setCustCity] = useState("");
+  const [debouncedLookup, setDebouncedLookup] = useState("");
 
   // Mode: Frame + Lens | Frame only | Lens only
   const [mode, setMode] = useState("Frame + Lens");
+
+  // Expandable progressive disclosure toggles
+  const [showMoreFrame, setShowMoreFrame] = useState(false);
+  const [showMoreLens, setShowMoreLens] = useState(false);
+  const [showRx, setShowRx] = useState(false);
+  const [showMoreBooking, setShowMoreBooking] = useState(false);
 
   // Frame parameters (all optional)
   const [frameId, setFrameId] = useState("");
@@ -74,7 +92,7 @@ export function OrderBooking() {
   const [frameSize, setFrameSize] = useState("");
   const [frameMaterial, setFrameMaterial] = useState("");
   const [frameType, setFrameType] = useState("");
-  const [framePrice, setFramePrice] = useState("0");
+  const [framePrice, setFramePrice] = useState("");
   const [frameQty, setFrameQty] = useState(1);
 
   // Lens parameters (all optional)
@@ -89,7 +107,7 @@ export function OrderBooking() {
   const [diaMm, setDiaMm] = useState("");
   const [sphRange, setSphRange] = useState("");
   const [cylRange, setCylRange] = useState("");
-  const [lensPrice, setLensPrice] = useState("0");
+  const [lensPrice, setLensPrice] = useState("");
   const [lensQty, setLensQty] = useState(1);
 
   // Optional prescription parameters
@@ -108,7 +126,7 @@ export function OrderBooking() {
 
   // Payment & delivery
   const [taxCategoryId, setTaxCategoryId] = useState("");
-  const [advanceAmount, setAdvanceAmount] = useState("0");
+  const [advanceAmount, setAdvanceAmount] = useState("");
   const [paymentMode, setPaymentMode] = useState<"cash" | "upi" | "card" | "bank" | "other">("cash");
   const [referenceNo, setReferenceNo] = useState("");
   const [promisedDate, setPromisedDate] = useState("");
@@ -117,16 +135,18 @@ export function OrderBooking() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  // Lookup existing customers quietly from whatever user types into phone or name
+  const lookupText = custPhone.trim().length >= 3 ? custPhone.trim() : custName.trim();
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(custSearch), 250);
+    const t = setTimeout(() => setDebouncedLookup(lookupText), 250);
     return () => clearTimeout(t);
-  }, [custSearch]);
+  }, [lookupText]);
 
   const customerQuery = useQuery({
-    queryKey: ["booking-cust-search", debouncedSearch],
+    queryKey: ["booking-cust-search", debouncedLookup],
     queryFn: () =>
-      api<{ rows: Customer[] }>(`customers?q=${encodeURIComponent(debouncedSearch)}`),
-    enabled: debouncedSearch.trim().length >= 2,
+      api<{ rows: Customer[] }>(`customers?q=${encodeURIComponent(debouncedLookup)}`),
+    enabled: !customerId && debouncedLookup.trim().length >= 2,
   });
 
   const framesQuery = useQuery({
@@ -174,7 +194,14 @@ export function OrderBooking() {
     setCustPhone(c.phone || "");
     setCustAge(c.age_years != null ? String(c.age_years) : "");
     setCustCity(c.city || "");
-    setCustSearch("");
+  }
+
+  function clearCustomerSelection() {
+    setCustomerId(null);
+    setCustName("");
+    setCustPhone("");
+    setCustAge("");
+    setCustCity("");
   }
 
   function handleSelectFrame(id: string) {
@@ -187,7 +214,7 @@ export function OrderBooking() {
       setFrameSize(f.size || "");
       setFrameMaterial(f.material || "");
       setFrameType(f.type || "");
-      setFramePrice(String(f.mrp_paise / 100));
+      setFramePrice(f.mrp_paise ? String(f.mrp_paise / 100) : "");
     }
   }
 
@@ -205,7 +232,7 @@ export function OrderBooking() {
       setDiaMm(l.dia_mm || "");
       setSphRange(l.sph_range || "");
       setCylRange(l.cyl_range || "");
-      setLensPrice(String(l.mrp_paise / 100));
+      setLensPrice(l.mrp_paise ? String(l.mrp_paise / 100) : "");
     }
   }
 
@@ -372,7 +399,7 @@ export function OrderBooking() {
         "book-order",
         payload,
       );
-      toast("Order booked & Booking bill generated");
+      toast("Booking Bill ready");
       window.location.assign(`/print/${res.invoiceId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to book order");
@@ -380,97 +407,76 @@ export function OrderBooking() {
     }
   }
 
-  const remainingPaise = Math.max(0, (previewTotals?.grand_total || 0) - advancePaise);
+  const grandTotal = previewTotals?.grand_total || 0;
+  const remainingPaise = Math.max(0, grandTotal - advancePaise);
+  const matchingCustomers = !customerId ? (customerQuery.data?.rows || []).slice(0, 4) : [];
 
   return (
     <form onSubmit={(e) => void handleSubmit(e)}>
       <PageTitle
-        eyebrow="ORDER BOOKING"
-        title="Book Frame or Lens Order"
-        description="Record customer details, product parameters, and advance payment to generate a Booking Bill."
-        action={<Badge>Booking Bill</Badge>}
+        eyebrow="STEP 1 · ORDER BOOKING"
+        title="Book Order"
+        description="Quickly enter customer name, phone, frame or lens selection, and advance paid."
+        action={
+          <Link href="/orders" className="button secondary">
+            <ArrowLeft size={16} />
+            Pending pickups
+          </Link>
+        }
       />
 
       {error && (
-        <div className="notice error-text" role="alert" style={{ marginBottom: 20 }}>
+        <div className="notice error-text" role="alert" style={{ marginBottom: 18 }}>
           {error}
         </div>
       )}
 
       <div className="wizard-layout">
         <div className="stack">
-          {/* 1. Customer */}
+          {/* 1. Customer — single streamlined row with inline autosuggest */}
           <Card>
             <div className="card-heading">
               <div>
-                <h2>1. Customer Details</h2>
+                <h2>1. Customer</h2>
                 <p className="section-note">
-                  Search existing customer or enter Name, Phone, and Age below.
+                  Enter Name and Phone — if they have visited before, tap their name to autofill.
                 </p>
               </div>
               {customerId && (
-                <Button
-                  variant="ghost"
-                  type="button"
-                  onClick={() => {
-                    setCustomerId(null);
-                    setCustName("");
-                    setCustPhone("");
-                    setCustAge("");
-                    setCustCity("");
-                  }}
-                >
-                  New customer
-                </Button>
+                <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                  <Badge>Returning customer</Badge>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    onClick={clearCustomerSelection}
+                  >
+                    Clear
+                  </Button>
+                </div>
               )}
             </div>
 
-            <div style={{ marginBottom: 16 }}>
-              <SearchInput
-                value={custSearch}
-                onChange={setCustSearch}
-                label="Search existing customer by phone or name (optional)"
-              />
-              {customerQuery.data?.rows?.length ? (
-                <div style={{ marginTop: 10 }}>
-                  {customerQuery.data.rows.slice(0, 5).map((c) => (
-                    <button
-                      type="button"
-                      key={c.id}
-                      className="list-choice"
-                      onClick={() => pickExistingCustomer(c)}
-                    >
-                      <span>
-                        <strong>{c.name}</strong>
-                        <small>
-                          {c.phone} {c.age_years != null ? `· Age ${c.age_years}` : ""} · First visit {displayDate(c.created_at)}
-                        </small>
-                      </span>
-                      <Check size={16} />
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="form-grid">
-              <Field label="Customer name">
+            <div className="form-grid" style={{ gridTemplateColumns: "2fr 1.6fr 1fr" }}>
+              <Field label="Name *">
                 <Input
                   value={custName}
                   onChange={(e) => {
                     setCustName(e.target.value);
                     if (customerId) setCustomerId(null);
                   }}
-                  placeholder="Full name"
+                  placeholder="Customer full name"
                   required
                 />
               </Field>
-              <Field label="Phone number (+91)">
+              <Field label="Phone number *">
                 <Input
                   type="tel"
                   value={custPhone}
-                  onChange={(e) => setCustPhone(e.target.value)}
-                  placeholder="10-digit mobile number"
+                  onChange={(e) => {
+                    setCustPhone(e.target.value);
+                    if (customerId) setCustomerId(null);
+                  }}
+                  placeholder="10-digit mobile"
                   required
                 />
               </Field>
@@ -484,23 +490,39 @@ export function OrderBooking() {
                   placeholder="Years"
                 />
               </Field>
-              <Field label="City (optional)">
-                <Input
-                  value={custCity}
-                  onChange={(e) => setCustCity(e.target.value)}
-                  placeholder="City"
-                />
-              </Field>
             </div>
+
+            {matchingCustomers.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <small className="muted" style={{ display: "block", marginBottom: 6 }}>
+                  Existing customer match (tap to autofill):
+                </small>
+                <div className="row wrap" style={{ gap: 8 }}>
+                  {matchingCustomers.map((c) => (
+                    <button
+                      type="button"
+                      key={c.id}
+                      className="button secondary"
+                      style={{ minHeight: 38, padding: "6px 12px", fontSize: 12 }}
+                      onClick={() => pickExistingCustomer(c)}
+                    >
+                      <Check size={14} />
+                      {c.name} · {c.phone}
+                      {c.age_years != null ? ` (${c.age_years}y)` : ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
 
-          {/* 2. Frame / Lens / Both */}
+          {/* 2. Frame / Lens / Both — Essential fields up front, optional extras tucked neatly */}
           <Card>
             <div className="card-heading">
               <div>
-                <h2>2. Frame & Lens Parameters</h2>
+                <h2>2. Frame / Lens Selection</h2>
                 <p className="section-note">
-                  Choose Frame, Lens, or Both. All parameter fields are optional — fill only what applies.
+                  All parameters are optional — fill only what you need.
                 </p>
               </div>
             </div>
@@ -514,140 +536,136 @@ export function OrderBooking() {
             </div>
 
             {(mode === "Frame + Lens" || mode === "Frame only") && (
-              <div style={{ marginBottom: 24 }}>
-                <h3 style={{ fontSize: 15, marginBottom: 12 }}>Frame Parameters</h3>
-                <div className="form-grid">
-                  {!!framesQuery.data?.rows?.length && (
-                    <div className="wide">
-                      <Field label="Pick from frame inventory (optional)">
-                        <select
-                          value={frameId}
-                          onChange={(e) => handleSelectFrame(e.target.value)}
-                        >
-                          <option value="">Enter frame specifications manually</option>
-                          {framesQuery.data.rows.map((f) => (
-                            <option key={f.id} value={f.id}>
-                              {f.brand} {f.model_no} ({f.colour || "Default"}) · ₹{f.mrp_paise / 100} · Stock {f.stock_qty}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                    </div>
-                  )}
-                  <Field label="Frame brand (optional)">
+              <div style={{ marginBottom: 22 }}>
+                <div className="row between" style={{ marginBottom: 10, alignItems: "center" }}>
+                  <h3 style={{ fontSize: 15 }}>Frame</h3>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setShowMoreFrame((v) => !v)}
+                  >
+                    {showMoreFrame ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    {showMoreFrame ? "Hide extra frame specs" : "+ More frame specs"}
+                  </Button>
+                </div>
+
+                <div className="form-grid" style={{ gridTemplateColumns: "1.4fr 1.2fr 1fr" }}>
+                  <Field label="Brand / Name">
                     <Input
                       value={frameBrand}
                       onChange={(e) => setFrameBrand(e.target.value)}
-                      placeholder="e.g. Ray-Ban, Titan, Fastrack"
+                      placeholder="e.g. Ray-Ban, Titan"
                     />
                   </Field>
-                  <Field label="Model / SKU (optional)">
+                  <Field label="Model / SKU">
                     <Input
                       value={frameModel}
                       onChange={(e) => setFrameModel(e.target.value)}
                       placeholder="e.g. RB3025"
                     />
                   </Field>
-                  <Field label="Colour (optional)">
-                    <Input
-                      value={frameColour}
-                      onChange={(e) => setFrameColour(e.target.value)}
-                      placeholder="e.g. Matte Black, Gold"
-                    />
-                  </Field>
-                  <Field label="Size — eye–bridge–temple (optional)">
-                    <Input
-                      value={frameSize}
-                      onChange={(e) => setFrameSize(e.target.value)}
-                      placeholder="e.g. 52-18-140"
-                    />
-                  </Field>
-                  <Field label="Material (optional)">
-                    <Input
-                      value={frameMaterial}
-                      onChange={(e) => setFrameMaterial(e.target.value)}
-                      placeholder="e.g. Acetate, Titanium, TR90"
-                    />
-                  </Field>
-                  <Field label="Frame type (optional)">
-                    <select
-                      value={frameType}
-                      onChange={(e) => setFrameType(e.target.value)}
-                    >
-                      <option value="">Select frame type</option>
-                      <option value="full rim">Full rim</option>
-                      <option value="half rim">Half rim</option>
-                      <option value="rimless">Rimless</option>
-                    </select>
-                  </Field>
-                  <Field label="Frame price (₹)">
+                  <Field label="Frame Price (₹)">
                     <Input
                       inputMode="decimal"
                       value={framePrice}
                       onChange={(e) => setFramePrice(e.target.value)}
-                      placeholder="0.00"
-                    />
-                  </Field>
-                  <Field label="Quantity">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={frameQty}
-                      onChange={(e) => setFrameQty(Number(e.target.value) || 1)}
+                      placeholder="0"
                     />
                   </Field>
                 </div>
+
+                {showMoreFrame && (
+                  <div className="form-grid" style={{ marginTop: 12 }}>
+                    {!!framesQuery.data?.rows?.length && (
+                      <div className="wide">
+                        <Field label="Pick from frame inventory">
+                          <select
+                            value={frameId}
+                            onChange={(e) => handleSelectFrame(e.target.value)}
+                          >
+                            <option value="">Manual entry</option>
+                            {framesQuery.data.rows.map((f) => (
+                              <option key={f.id} value={f.id}>
+                                {f.brand} {f.model_no} ({f.colour || "Default"}) · ₹{f.mrp_paise / 100}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                      </div>
+                    )}
+                    <Field label="Colour">
+                      <Input
+                        value={frameColour}
+                        onChange={(e) => setFrameColour(e.target.value)}
+                        placeholder="Matte Black, Gold"
+                      />
+                    </Field>
+                    <Field label="Size (eye-bridge-temple)">
+                      <Input
+                        value={frameSize}
+                        onChange={(e) => setFrameSize(e.target.value)}
+                        placeholder="52-18-140"
+                      />
+                    </Field>
+                    <Field label="Material">
+                      <Input
+                        value={frameMaterial}
+                        onChange={(e) => setFrameMaterial(e.target.value)}
+                        placeholder="Acetate, Titanium"
+                      />
+                    </Field>
+                    <Field label="Frame Type">
+                      <select
+                        value={frameType}
+                        onChange={(e) => setFrameType(e.target.value)}
+                      >
+                        <option value="">Select</option>
+                        <option value="full rim">Full rim</option>
+                        <option value="half rim">Half rim</option>
+                        <option value="rimless">Rimless</option>
+                      </select>
+                    </Field>
+                    <Field label="Quantity">
+                      <Input
+                        type="number"
+                        min={1}
+                        value={frameQty}
+                        onChange={(e) => setFrameQty(Number(e.target.value) || 1)}
+                      />
+                    </Field>
+                  </div>
+                )}
               </div>
             )}
 
             {(mode === "Frame + Lens" || mode === "Lens only") && (
-              <div style={{ marginBottom: 20 }}>
-                <h3 style={{ fontSize: 15, marginBottom: 12 }}>Lens Parameters</h3>
+              <div style={{ marginBottom: 18 }}>
+                <div className="row between" style={{ marginBottom: 10, alignItems: "center" }}>
+                  <h3 style={{ fontSize: 15 }}>Lens</h3>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setShowMoreLens((v) => !v)}
+                  >
+                    {showMoreLens ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    {showMoreLens ? "Hide extra lens specs" : "+ More lens specs"}
+                  </Button>
+                </div>
+
                 <div className="form-grid">
-                  {!!lensesQuery.data?.rows?.length && (
-                    <div className="wide">
-                      <Field label="Pick from lens inventory (optional)">
-                        <select
-                          value={lensId}
-                          onChange={(e) => handleSelectLens(e.target.value)}
-                        >
-                          <option value="">Enter lens specifications manually</option>
-                          {lensesQuery.data.rows.map((l) => (
-                            <option key={l.id} value={l.id}>
-                              {l.brand} {l.lens_code} ({l.name}) · ₹{l.mrp_paise / 100} · Stock {l.stock_qty}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                    </div>
-                  )}
-                  <Field label="Lens brand (optional)">
+                  <Field label="Brand / Name">
                     <Input
                       value={lensBrand}
                       onChange={(e) => setLensBrand(e.target.value)}
-                      placeholder="e.g. Essilor, Crizal, Zeiss, Hoya"
+                      placeholder="e.g. Essilor, Crizal, Zeiss"
                     />
                   </Field>
-                  <Field label="Product name (optional)">
-                    <Input
-                      value={lensName}
-                      onChange={(e) => setLensName(e.target.value)}
-                      placeholder="e.g. Crizal Prevencia"
-                    />
-                  </Field>
-                  <Field label="Lens code / SKU (optional)">
-                    <Input
-                      value={lensCode}
-                      onChange={(e) => setLensCode(e.target.value)}
-                      placeholder="e.g. ES-CRIZ-156"
-                    />
-                  </Field>
-                  <Field label="Lens type (optional)">
+                  <Field label="Lens Type">
                     <select
                       value={lensType}
                       onChange={(e) => setLensType(e.target.value)}
                     >
-                      <option value="">Select lens type</option>
+                      <option value="">Any / not specified</option>
                       {LENS_TYPES.map((t) => (
                         <option key={t} value={t}>
                           {t}
@@ -655,25 +673,12 @@ export function OrderBooking() {
                       ))}
                     </select>
                   </Field>
-                  <Field label="Refractive index / material (optional)">
-                    <select
-                      value={lensIndex}
-                      onChange={(e) => setLensIndex(e.target.value)}
-                    >
-                      <option value="">Select index</option>
-                      {LENS_INDICES.map((idx) => (
-                        <option key={idx} value={idx}>
-                          {idx}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Coatings (optional)">
+                  <Field label="Coating">
                     <select
                       value={coatings}
                       onChange={(e) => setCoatings(e.target.value)}
                     >
-                      <option value="">Select coating</option>
+                      <option value="">Any / not specified</option>
                       {COATINGS_LIST.map((c) => (
                         <option key={c} value={c}>
                           {c}
@@ -681,187 +686,342 @@ export function OrderBooking() {
                       ))}
                     </select>
                   </Field>
-                  <Field label="Tint / treatment (optional)">
-                    <select value={tint} onChange={(e) => setTint(e.target.value)}>
-                      <option value="">Select tint</option>
-                      {TINT_LIST.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Diameter mm (optional)">
-                    <Input
-                      value={diaMm}
-                      onChange={(e) => setDiaMm(e.target.value)}
-                      placeholder="e.g. 65, 70"
-                    />
-                  </Field>
-                  <Field label="SPH range (optional)">
-                    <Input
-                      value={sphRange}
-                      onChange={(e) => setSphRange(e.target.value)}
-                      placeholder="e.g. -6.00 to +4.00"
-                    />
-                  </Field>
-                  <Field label="CYL range (optional)">
-                    <Input
-                      value={cylRange}
-                      onChange={(e) => setCylRange(e.target.value)}
-                      placeholder="e.g. 0.00 to -2.00"
-                    />
-                  </Field>
-                  <Field label="Lens price (₹)">
+                  <Field label="Lens Price (₹)">
                     <Input
                       inputMode="decimal"
                       value={lensPrice}
                       onChange={(e) => setLensPrice(e.target.value)}
-                      placeholder="0.00"
-                    />
-                  </Field>
-                  <Field label="Quantity (pairs)">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={lensQty}
-                      onChange={(e) => setLensQty(Number(e.target.value) || 1)}
+                      placeholder="0"
                     />
                   </Field>
                 </div>
+
+                {showMoreLens && (
+                  <div className="form-grid" style={{ marginTop: 12 }}>
+                    {!!lensesQuery.data?.rows?.length && (
+                      <div className="wide">
+                        <Field label="Pick from lens inventory">
+                          <select
+                            value={lensId}
+                            onChange={(e) => handleSelectLens(e.target.value)}
+                          >
+                            <option value="">Manual entry</option>
+                            {lensesQuery.data.rows.map((l) => (
+                              <option key={l.id} value={l.id}>
+                                {l.brand} {l.lens_code} ({l.name}) · ₹{l.mrp_paise / 100}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                      </div>
+                    )}
+                    <Field label="Product Name">
+                      <Input
+                        value={lensName}
+                        onChange={(e) => setLensName(e.target.value)}
+                        placeholder="e.g. Crizal Prevencia"
+                      />
+                    </Field>
+                    <Field label="Lens Code / SKU">
+                      <Input
+                        value={lensCode}
+                        onChange={(e) => setLensCode(e.target.value)}
+                        placeholder="e.g. ES-156"
+                      />
+                    </Field>
+                    <Field label="Refractive Index">
+                      <select
+                        value={lensIndex}
+                        onChange={(e) => setLensIndex(e.target.value)}
+                      >
+                        <option value="">Select index</option>
+                        {LENS_INDICES.map((idx) => (
+                          <option key={idx} value={idx}>
+                            {idx}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Tint">
+                      <select value={tint} onChange={(e) => setTint(e.target.value)}>
+                        <option value="">Select tint</option>
+                        {TINT_LIST.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Diameter (mm)">
+                      <Input
+                        value={diaMm}
+                        onChange={(e) => setDiaMm(e.target.value)}
+                        placeholder="65, 70"
+                      />
+                    </Field>
+                    <Field label="SPH Range">
+                      <Input
+                        value={sphRange}
+                        onChange={(e) => setSphRange(e.target.value)}
+                        placeholder="-6.00 to +4.00"
+                      />
+                    </Field>
+                    <Field label="CYL Range">
+                      <Input
+                        value={cylRange}
+                        onChange={(e) => setCylRange(e.target.value)}
+                        placeholder="0.00 to -2.00"
+                      />
+                    </Field>
+                    <Field label="Quantity (pairs)">
+                      <Input
+                        type="number"
+                        min={1}
+                        value={lensQty}
+                        onChange={(e) => setLensQty(Number(e.target.value) || 1)}
+                      />
+                    </Field>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Optional Eye Power / Rx */}
-            <details style={{ marginTop: 12 }}>
-              <summary style={{ cursor: "pointer", fontWeight: 600 }}>
-                Eye power / prescription parameters (optional)
-              </summary>
-              <div className="form-grid" style={{ marginTop: 14 }}>
-                <Field label="OD (Right) SPH">
-                  <Input value={odSph} onChange={(e) => setOdSph(e.target.value)} placeholder="-1.25" />
-                </Field>
-                <Field label="OD CYL">
-                  <Input value={odCyl} onChange={(e) => setOdCyl(e.target.value)} placeholder="-0.50" />
-                </Field>
-                <Field label="OD AXIS">
-                  <Input value={odAxis} onChange={(e) => setOdAxis(e.target.value)} placeholder="90" />
-                </Field>
-                <Field label="OD ADD">
-                  <Input value={odAdd} onChange={(e) => setOdAdd(e.target.value)} placeholder="1.50" />
-                </Field>
-                <Field label="OS (Left) SPH">
-                  <Input value={osSph} onChange={(e) => setOsSph(e.target.value)} placeholder="-1.00" />
-                </Field>
-                <Field label="OS CYL">
-                  <Input value={osCyl} onChange={(e) => setOsCyl(e.target.value)} placeholder="-0.25" />
-                </Field>
-                <Field label="OS AXIS">
-                  <Input value={osAxis} onChange={(e) => setOsAxis(e.target.value)} placeholder="180" />
-                </Field>
-                <Field label="OS ADD">
-                  <Input value={osAdd} onChange={(e) => setOsAdd(e.target.value)} placeholder="1.50" />
-                </Field>
-                <Field label="Binocular PD (mm)">
-                  <Input value={binPd} onChange={(e) => setBinPd(e.target.value)} placeholder="62" />
-                </Field>
-                <Field label="Examiner">
-                  <Input value={rxExaminer} onChange={(e) => setRxExaminer(e.target.value)} placeholder="Optometrist / Doctor" />
-                </Field>
-                <Field label="Source">
-                  <select
-                    value={rxSourceType}
-                    onChange={(e) => setRxSourceType(e.target.value as "in_shop" | "external")}
-                  >
-                    <option value="in_shop">In shop</option>
-                    <option value="external">External</option>
-                  </select>
-                </Field>
-                <Field label="Source name (Clinic / Doctor)">
-                  <Input
-                    value={rxSourceName}
-                    onChange={(e) => setRxSourceName(e.target.value)}
-                    placeholder="Clinic or Doctor name"
-                  />
-                </Field>
-              </div>
-            </details>
+            {/* Compact 2-Row Eye Power Table toggle */}
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setShowRx((v) => !v)}
+              >
+                {showRx ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                {showRx ? "Hide eye power (Rx)" : "+ Add eye power / prescription (optional)"}
+              </Button>
+
+              {showRx && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="rx-scroll" style={{ marginBottom: 14 }}>
+                    <table className="data-table" style={{ minWidth: 460 }}>
+                      <thead>
+                        <tr>
+                          <th>Eye</th>
+                          <th>SPH</th>
+                          <th>CYL</th>
+                          <th>AXIS</th>
+                          <th>ADD</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td><strong>Right (OD)</strong></td>
+                          <td><Input value={odSph} onChange={(e) => setOdSph(e.target.value)} placeholder="-1.25" /></td>
+                          <td><Input value={odCyl} onChange={(e) => setOdCyl(e.target.value)} placeholder="-0.50" /></td>
+                          <td><Input value={odAxis} onChange={(e) => setOdAxis(e.target.value)} placeholder="90" /></td>
+                          <td><Input value={odAdd} onChange={(e) => setOdAdd(e.target.value)} placeholder="1.50" /></td>
+                        </tr>
+                        <tr>
+                          <td><strong>Left (OS)</strong></td>
+                          <td><Input value={osSph} onChange={(e) => setOsSph(e.target.value)} placeholder="-1.00" /></td>
+                          <td><Input value={osCyl} onChange={(e) => setOsCyl(e.target.value)} placeholder="-0.25" /></td>
+                          <td><Input value={osAxis} onChange={(e) => setOsAxis(e.target.value)} placeholder="180" /></td>
+                          <td><Input value={osAdd} onChange={(e) => setOsAdd(e.target.value)} placeholder="1.50" /></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="form-grid">
+                    <Field label="PD (mm)">
+                      <Input value={binPd} onChange={(e) => setBinPd(e.target.value)} placeholder="62" />
+                    </Field>
+                    <Field label="Examiner">
+                      <Input value={rxExaminer} onChange={(e) => setRxExaminer(e.target.value)} placeholder="Optometrist / Doctor" />
+                    </Field>
+                    <Field label="Source">
+                      <select
+                        value={rxSourceType}
+                        onChange={(e) => setRxSourceType(e.target.value as "in_shop" | "external")}
+                      >
+                        <option value="in_shop">In shop</option>
+                        <option value="external">External</option>
+                      </select>
+                    </Field>
+                    <Field label="Source Name">
+                      <Input
+                        value={rxSourceName}
+                        onChange={(e) => setRxSourceName(e.target.value)}
+                        placeholder="Clinic or Doctor name"
+                      />
+                    </Field>
+                  </div>
+                </div>
+              )}
+            </div>
           </Card>
 
           {/* 3. Advance Payment & Delivery */}
           <Card>
-            <h2>3. Advance Payment & Delivery</h2>
+            <h2>3. Advance Payment</h2>
             <p className="section-note">
-              Collect the booking advance now. Remaining balance will be collected when the customer returns to pick up the product.
+              Enter advance received now (if any). Remaining balance is collected when customer picks up the order.
             </p>
-            <div className="form-grid" style={{ marginTop: 16 }}>
-              <Field label="Advance payment paid now (₹)">
+
+            <div className="form-grid" style={{ marginTop: 14 }}>
+              <Field label="Advance Paid Now (₹)">
                 <Input
                   inputMode="decimal"
                   value={advanceAmount}
                   onChange={(e) => setAdvanceAmount(e.target.value)}
-                  placeholder="0.00"
+                  placeholder="0"
                 />
+                {grandTotal > 0 && (
+                  <div className="row wrap" style={{ gap: 6, marginTop: 6 }}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      style={{ minHeight: 30, padding: "2px 8px", fontSize: 11 }}
+                      onClick={() => setAdvanceAmount("500")}
+                    >
+                      ₹500
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      style={{ minHeight: 30, padding: "2px 8px", fontSize: 11 }}
+                      onClick={() => setAdvanceAmount("1000")}
+                    >
+                      ₹1000
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      style={{ minHeight: 30, padding: "2px 8px", fontSize: 11 }}
+                      onClick={() => setAdvanceAmount(String(Math.round(grandTotal / 200)))}
+                    >
+                      50%
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      style={{ minHeight: 30, padding: "2px 8px", fontSize: 11 }}
+                      onClick={() => setAdvanceAmount(String(grandTotal / 100))}
+                    >
+                      Full ({formatMoney(grandTotal)})
+                    </Button>
+                  </div>
+                )}
               </Field>
-              <Field label="Mode of payment">
-                <select
-                  value={paymentMode}
-                  onChange={(e) => setPaymentMode(e.target.value as any)}
-                >
-                  <option value="cash">Cash</option>
-                  <option value="upi">UPI</option>
-                  <option value="card">Card</option>
-                  <option value="bank">Bank transfer</option>
-                  <option value="other">Other</option>
-                </select>
+
+              <Field label="Payment Mode">
+                <div className="row wrap" style={{ gap: 6 }}>
+                  {PAYMENT_MODES.map(([val, label]) => (
+                    <Button
+                      key={val}
+                      type="button"
+                      variant={paymentMode === val ? "primary" : "secondary"}
+                      style={{ minHeight: 38, padding: "6px 12px", fontSize: 12 }}
+                      onClick={() => setPaymentMode(val)}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
               </Field>
-              <Field label="Payment reference (optional)">
-                <Input
-                  value={referenceNo}
-                  onChange={(e) => setReferenceNo(e.target.value)}
-                  placeholder="UPI / Txn ref"
-                />
-              </Field>
-              <Field label="Promised delivery date (optional)">
+
+              <Field label="Delivery Date (optional)">
                 <Input
                   type="date"
                   value={promisedDate}
                   onChange={(e) => setPromisedDate(e.target.value)}
                 />
+                <div className="row wrap" style={{ gap: 6, marginTop: 6 }}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    style={{ minHeight: 30, padding: "2px 8px", fontSize: 11 }}
+                    onClick={() => setPromisedDate(addDaysIso(1))}
+                  >
+                    Tomorrow
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    style={{ minHeight: 30, padding: "2px 8px", fontSize: 11 }}
+                    onClick={() => setPromisedDate(addDaysIso(3))}
+                  >
+                    +3 days
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    style={{ minHeight: 30, padding: "2px 8px", fontSize: 11 }}
+                    onClick={() => setPromisedDate(addDaysIso(7))}
+                  >
+                    +7 days
+                  </Button>
+                </div>
               </Field>
-              <Field label="Lab / supplier name (optional)">
-                <Input
-                  value={labName}
-                  onChange={(e) => setLabName(e.target.value)}
-                  placeholder="e.g. In-house Lab, Essilor Lab"
-                />
-              </Field>
-              <Field label="Tax category">
-                <select
-                  value={effectiveTaxId}
-                  onChange={(e) => setTaxCategoryId(e.target.value)}
-                >
-                  {currentTaxes.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} · {t.gst_rate_bp / 100}%
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <div className="wide">
-                <Field label="Notes (optional)">
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Fitting notes, special instructions..."
-                  />
-                </Field>
-              </div>
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setShowMoreBooking((v) => !v)}
+              >
+                {showMoreBooking ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                {showMoreBooking ? "Hide extra booking options" : "+ More options (Lab, Payment ref, City, Tax, Notes)"}
+              </Button>
+
+              {showMoreBooking && (
+                <div className="form-grid" style={{ marginTop: 12 }}>
+                  <Field label="Payment Reference">
+                    <Input
+                      value={referenceNo}
+                      onChange={(e) => setReferenceNo(e.target.value)}
+                      placeholder="UPI / Card ref"
+                    />
+                  </Field>
+                  <Field label="Lab / Supplier">
+                    <Input
+                      value={labName}
+                      onChange={(e) => setLabName(e.target.value)}
+                      placeholder="In-house Lab"
+                    />
+                  </Field>
+                  <Field label="City">
+                    <Input
+                      value={custCity}
+                      onChange={(e) => setCustCity(e.target.value)}
+                      placeholder="City"
+                    />
+                  </Field>
+                  <Field label="Tax Category">
+                    <select
+                      value={effectiveTaxId}
+                      onChange={(e) => setTaxCategoryId(e.target.value)}
+                    >
+                      {currentTaxes.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} · {t.gst_rate_bp / 100}%
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <div className="wide">
+                    <Field label="Notes">
+                      <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="Fitting notes or special instructions..."
+                      />
+                    </Field>
+                  </div>
+                </div>
+              )}
             </div>
           </Card>
         </div>
 
-        {/* Sticky Booking Summary */}
+        {/* Sticky Summary */}
         <Card className="sticky-summary">
           <p className="eyebrow">BOOKING SUMMARY</p>
           <h2>Booking Bill</h2>
@@ -874,28 +1034,16 @@ export function OrderBooking() {
           ) : (
             previewTotals && (
               <>
-                <div className="summary-line">
-                  <span>Subtotal</span>
-                  <span>{formatMoney(previewTotals.subtotal)}</span>
-                </div>
-                {shop.gst_scheme === "regular" && (
-                  <div className="summary-line">
-                    <span>Tax (CGST + SGST)</span>
-                    <span>
-                      {formatMoney(previewTotals.cgst + previewTotals.sgst)}
-                    </span>
-                  </div>
-                )}
-                <div className="summary-line summary-total">
-                  <span>Total</span>
+                <div className="summary-line summary-total" style={{ marginTop: 14 }}>
+                  <span>Order Total</span>
                   <span>{formatMoney(previewTotals.grand_total)}</span>
                 </div>
                 <div className="summary-line">
-                  <span>Advance paid ({paymentMode.toUpperCase()})</span>
+                  <span>Advance Paid ({paymentMode.toUpperCase()})</span>
                   <span>{formatMoney(advancePaise)}</span>
                 </div>
                 <div className="summary-line">
-                  <strong>Remaining balance</strong>
+                  <strong>Remaining Balance</strong>
                   <strong>{formatMoney(remainingPaise)}</strong>
                 </div>
               </>
@@ -912,7 +1060,7 @@ export function OrderBooking() {
             </Button>
           </div>
           <small style={{ display: "block", marginTop: 12 }}>
-            When the product arrives and the customer returns, open this customer or order to collect the remaining balance, take a photo, and print the final bill.
+            Next time the customer returns, open Pickups &amp; Orders (or Home) to collect the remaining amount, take a photo, and print the final bill.
           </small>
         </Card>
       </div>

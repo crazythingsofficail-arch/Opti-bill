@@ -1180,13 +1180,7 @@ export function getDashboardStats() {
   const due = store.orders
     .filter((o) => o.status !== "Delivered")
     .slice(0, 10)
-    .map((o) => {
-      const cust = store.customers.find((c) => c.id === o.customer_id);
-      return {
-        ...o,
-        customers: cust ? { name: cust.name, phone: cust.phone } : null,
-      };
-    });
+    .map((o) => enrichOrderWithInvoice(o, store));
 
   return {
     stats: {

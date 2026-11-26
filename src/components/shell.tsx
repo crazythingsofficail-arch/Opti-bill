@@ -31,10 +31,11 @@ import { BRAND_FOOTER } from "@/lib/i18n";
 import type { Customer, Invoice } from "@/lib/types";
 const navigation = [
   ["/", "Overview", Home],
+  ["/orders/new", "Book Order", Plus],
+  ["/orders", "Pickups & Orders", Package],
   ["/customers", "Customers", Users],
-  ["/new-bill", "New Bill", Plus],
+  ["/new-bill", "Quick Bill", Wallet],
   ["/invoices", "Invoices", FileText],
-  ["/orders", "Orders", Package],
   ["/inventory", "Inventory", Glasses],
   ["/reports", "Reports", ChartNoAxesCombined],
   ["/settings", "Settings", Settings],
@@ -147,7 +148,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
               aria-current={pathname === href ? "page" : undefined}
               key={href}
               href={href}
-              className={`nav-item ${pathname === href || (href !== "/" && pathname.startsWith(href + "/")) ? "active" : ""}`}
+              className={`nav-item ${
+                pathname === href ||
+                (href !== "/" &&
+                  href !== "/orders" &&
+                  pathname.startsWith(href + "/")) ||
+                (href === "/orders" &&
+                  pathname.startsWith("/orders/") &&
+                  pathname !== "/orders/new")
+                  ? "active"
+                  : ""
+              }`}
             >
               <Icon size={19} strokeWidth={1.7} />
               <span>{label}</span>

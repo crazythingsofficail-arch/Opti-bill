@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, ArrowUpRight } from "lucide-react";
+import { Plus, ArrowUpRight, Printer } from "lucide-react";
 import { api, displayDate } from "@/lib/client";
 import { formatMoney } from "@/lib/money";
 import type { Customer, Invoice, Frame, Lens, Order } from "@/lib/types";
@@ -925,18 +925,24 @@ export const orderStatuses = [
 export function Orders() {
   const [q, setQ] = useState(""),
     [page, setPage] = useState(1),
-    [tab, setTab] = useState("Ordered");
+    [view, setView] = useState("Pending Pickups"),
+    [boardTab, setBoardTab] = useState("Ordered");
   const search = useSearch(q);
   const result = useList<Order>(
     "orders",
     new URLSearchParams({ q: search, page: String(page) }).toString(),
   );
+  const allRows = result.data?.rows || [];
+  const pendingRows = allRows.filter((o) => o.status !== "Delivered");
+  const deliveredRows = allRows.filter((o) => o.status === "Delivered");
+  const activeRows = view === "Pending Pickups" ? pendingRows : deliveredRows;
+
   return (
     <>
       <PageTitle
-        eyebrow="FROM COUNTER TO COLLECTION"
-        title="Orders"
-        description="A clear path from prescription to a perfect fit."
+        eyebrow="CUSTOMER PICKUPS & ORDERS"
+        title="Pickups & Orders"
+        description="Find returning customers by name, phone, or order number to collect balance, take a photo, and print their final bill."
         action={
           <div className="row wrap" style={{ gap: "8px" }}>
             <Link href="/orders/new" className="button primary">
@@ -956,36 +962,40 @@ export function Orders() {
             setQ(v);
             setPage(1);
           }}
-          label="Search order number"
+          label="Search customer name, phone number, or order #"
         />
-      </div>
-      <div className="mobile-only" style={{ marginBottom: 20 }}>
         <SegmentedControl
-          values={orderStatuses}
-          value={tab}
-          onChange={setTab}
+          values={["Pending Pickups", "Delivered", "Lab Board"]}
+          value={view}
+          onChange={setView}
         />
       </div>
       {result.isPending ? (
         <Skeleton />
       ) : result.error ? (
         <ErrorState error={result.error} retry={() => void result.refetch()} />
-      ) : (
+      ) : view === "Lab Board" ? (
         <>
+          <div className="mobile-only" style={{ marginBottom: 20 }}>
+            <SegmentedControl
+              values={orderStatuses}
+              value={boardTab}
+              onChange={setBoardTab}
+            />
+          </div>
           <div className="kanban">
             {orderStatuses.map((status) => (
               <section
                 key={status}
-                className={`kanban-column ${status !== tab ? "desktop-only" : ""}`}
+                className={`kanban-column ${status !== boardTab ? "desktop-only" : ""}`}
               >
                 <div className="kanban-heading">
                   <strong>{status}</strong>
                   <Badge>
-                    {result.data?.rows.filter((o) => o.status === status)
-                      .length || 0}
+                    {allRows.filter((o) => o.status === status).length}
                   </Badge>
                 </div>
-                {result.data?.rows
+                {allRows
                   .filter((o) => o.status === status)
                   .map((o) => (
                     <Link
@@ -1011,7 +1021,7 @@ export function Orders() {
                       <small>{o.lab_name || "Lab not assigned"}</small>
                     </Link>
                   ))}
-                {!result.data?.rows.some((o) => o.status === status) && (
+                {!allRows.some((o) => o.status === status) && (
                   <p className="muted" style={{ fontSize: 12 }}>
                     No orders at this stage.
                   </p>
@@ -1021,6 +1031,82 @@ export function Orders() {
           </div>
           <Pager count={result.data?.count || 0} page={page} onPage={setPage} />
         </>
+      ) : (
+        <Card>
+          {activeRows.length === 0 ? (
+            <EmptyState
+              title={view === "Pending Pickups" ? "No pending pickups." : "No delivered orders yet."}
+              description="Book a frame or lens order to generate a Booking Bill."
+              href="/orders/new"
+              action="Book order"
+            />
+          ) : (
+            <DataTable
+              rows={activeRows}
+              rowKey={(o) => o.id}
+              columns={[
+              {
+                key: "customer",
+                label: "Customer",
+                render: (o) => (
+                  <Link href={`/orders/${o.id}`}>
+                    <strong>{o.customers?.name || "Customer"}</strong>
+                    {o.customers?.phone && (
+                      <small style={{ display: "block" }}>{o.customers.phone}</small>
+                    )}
+                  </Link>
+                ),
+              },
+              {
+                key: "order",
+                label: "Order",
+                render: (o) => (
+                  <Link href={`/orders/${o.id}`}>
+                    <span>{o.order_no}</span>
+                    <small style={{ display: "block" }}>
+                      {displayDate(o.created_at)}
+                      {o.promised_date ? ` · Due ${displayDate(o.promised_date)}` : ""}
+                    </small>
+                  </Link>
+                ),
+              },
+              {
+                key: "paid",
+                label: "Advance / Paid",
+                render: (o) => formatMoney(o.amount_paid || 0),
+              },
+              {
+                key: "due",
+                label: "Remaining Balance",
+                render: (o) =>
+                  o.balance_due && o.balance_due > 0 ? (
+                    <strong>{formatMoney(o.balance_due)}</strong>
+                  ) : (
+                    <Badge>Paid</Badge>
+                  ),
+              },
+              {
+                key: "actions",
+                label: "",
+                render: (o) => (
+                  <div className="row wrap" style={{ gap: 6, justifyContent: "flex-end" }}>
+                    <Link href={`/orders/${o.id}`} className="button primary">
+                      {o.status === "Delivered" ? "Open" : "Collect & Deliver"}
+                    </Link>
+                    {o.invoice_id && (
+                      <Link href={`/print/${o.invoice_id}`} className="button secondary">
+                        <Printer size={15} />
+                        Bill
+                      </Link>
+                    )}
+                  </div>
+                ),
+              },
+            ]}
+          />
+          )}
+          <Pager count={result.data?.count || 0} page={page} onPage={setPage} />
+        </Card>
       )}
     </>
   );

@@ -108,7 +108,7 @@ export function PrintPreview({
             <div className="row wrap" style={{ gap: "8px" }}>
               <Button onClick={() => window.print()}>
                 <Printer size={16} />
-                Print
+                {isBookingBill ? "Print Booking Bill" : "Print Bill"}
               </Button>
               <a
                 className="button secondary"
@@ -117,28 +117,21 @@ export function PrintPreview({
                 <Download size={16} />
                 PDF
               </a>
-              <Link className="button secondary" href={`/invoices/${i.id}`}>
-                Manage invoice
-              </Link>
-              {order?.id && order.id !== "ord-default" && (
-                <Link className="button secondary" href={`/orders/${order.id}`}>
-                  {isBookingBill ? "Collect balance & deliver" : "Open order"}
+              {order?.id && order.id !== "ord-default" && isBookingBill && (
+                <Link className="button primary" href={`/orders/${order.id}`}>
+                  <CheckCircle2 size={16} />
+                  Collect Balance &amp; Deliver
                 </Link>
               )}
-              <Link
-                className="button secondary"
-                href="/customers?filter=completed"
-              >
-                <Users size={16} />
-                Completed customers
-              </Link>
-              <Link className="button secondary" href="/reports">
-                <ChartNoAxesCombined size={16} />
-                Open report
-              </Link>
-              <Link className="button primary" href="/new-bill">
+              <Link className="button secondary" href="/orders/new">
                 <Plus size={16} />
-                New bill
+                Book New Order
+              </Link>
+              <Link className="button ghost" href="/orders">
+                Pickups &amp; Orders
+              </Link>
+              <Link className="button ghost" href={`/invoices/${i.id}`}>
+                Invoice details
               </Link>
             </div>
           }

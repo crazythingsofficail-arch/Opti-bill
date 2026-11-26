@@ -828,7 +828,7 @@ function OrderDeliveryPanel({
 }) {
   const toast = useToast();
   const [amount, setAmount] = useState(
-    invoice ? String((invoice.balance_due || 0) / 100) : "0",
+    invoice && invoice.balance_due > 0 ? String(invoice.balance_due / 100) : "",
   );
   const [mode, setMode] = useState("cash");
   const [referenceNo, setReferenceNo] = useState("");
@@ -854,7 +854,7 @@ function OrderDeliveryPanel({
           mark_delivered: markDelivered,
         },
       );
-      toast("Order updated & payment saved");
+      toast("Order delivered & payment saved");
       if (printAfter && (res.invoiceId || invoice?.id)) {
         window.location.assign(`/print/${res.invoiceId || invoice!.id}`);
         return;
@@ -871,35 +871,43 @@ function OrderDeliveryPanel({
     <Card>
       <div className="card-heading">
         <div>
-          <h2>Customer Revisit — Remaining Payment & Delivery</h2>
+          <h2>Step 2 · Delivery &amp; Final Payment</h2>
           <p className="section-note">
-            Collect remaining balance, take a photo of the product, mark delivered, and print the final bill.
+            Confirm remaining amount paid, take/upload product photo, and print the final bill.
           </p>
         </div>
         <Badge>{order.status}</Badge>
       </div>
 
       {invoice && (
-        <div className="notice" style={{ marginBottom: 18 }}>
-          <div className="summary-line">
-            <span>Bill ({invoice.invoice_no || "Draft"}) Total</span>
+        <div
+          className="notice"
+          style={{
+            marginBottom: 18,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+            gap: 12,
+          }}
+        >
+          <div>
+            <small className="muted" style={{ display: "block" }}>Order Total</small>
             <strong>{formatMoney(invoice.grand_total)}</strong>
           </div>
-          <div className="summary-line">
-            <span>Paid / Advance received</span>
+          <div>
+            <small className="muted" style={{ display: "block" }}>Advance / Paid</small>
             <strong>{formatMoney(invoice.amount_paid)}</strong>
           </div>
-          <div className="summary-line">
-            <strong>Remaining Balance Due</strong>
-            <strong>{formatMoney(invoice.balance_due)}</strong>
+          <div>
+            <small className="muted" style={{ display: "block" }}>Remaining Due</small>
+            <strong style={{ fontSize: 16 }}>{formatMoney(invoice.balance_due)}</strong>
           </div>
         </div>
       )}
 
       {!!payments.length && (
         <div style={{ marginBottom: 16 }}>
-          <small className="muted" style={{ display: "block", marginBottom: 6 }}>
-            Payments recorded:
+          <small className="muted" style={{ display: "block", marginBottom: 4 }}>
+            Previous payments:
           </small>
           {payments.map((p) => (
             <div className="summary-line" key={p.id}>
@@ -919,22 +927,54 @@ function OrderDeliveryPanel({
       )}
 
       <div className="form-grid" style={{ marginBottom: 18 }}>
-        <Field label="Remaining cost paid now (₹)">
+        <Field label="Remaining Amount Paid Now (₹)">
           <Input
             inputMode="decimal"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder="0.00"
+            placeholder="0"
           />
+          {invoice && invoice.balance_due > 0 && (
+            <div className="row wrap" style={{ gap: 6, marginTop: 6 }}>
+              <Button
+                type="button"
+                variant="ghost"
+                style={{ minHeight: 30, padding: "2px 8px", fontSize: 11 }}
+                onClick={() => setAmount(String(invoice.balance_due / 100))}
+              >
+                Full Balance ({formatMoney(invoice.balance_due)})
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                style={{ minHeight: 30, padding: "2px 8px", fontSize: 11 }}
+                onClick={() => setAmount("0")}
+              >
+                ₹0
+              </Button>
+            </div>
+          )}
         </Field>
-        <Field label="Mode of payment">
-          <select value={mode} onChange={(e) => setMode(e.target.value)}>
-            <option value="cash">Cash</option>
-            <option value="upi">UPI</option>
-            <option value="card">Card</option>
-            <option value="bank">Bank transfer</option>
-            <option value="other">Other</option>
-          </select>
+        <Field label="Mode of Payment">
+          <div className="row wrap" style={{ gap: 6 }}>
+            {[
+              ["cash", "Cash"],
+              ["upi", "UPI"],
+              ["card", "Card"],
+              ["bank", "Bank"],
+              ["other", "Other"],
+            ].map(([val, label]) => (
+              <Button
+                key={val}
+                type="button"
+                variant={mode === val ? "primary" : "secondary"}
+                style={{ minHeight: 38, padding: "6px 12px", fontSize: 12 }}
+                onClick={() => setMode(val)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
         </Field>
         <Field label="Reference (optional)">
           <Input
@@ -956,8 +996,8 @@ function OrderDeliveryPanel({
       <div style={{ marginBottom: 18 }}>
         <ImageUploader
           orderId={order.id}
-          title="Take / Upload Delivery Photo"
-          description="Take a photo with camera or upload before printing the final bill."
+          title="Delivery Photo (optional)"
+          description="Take a photo using camera or upload before printing the final bill."
         />
       </div>
 
@@ -976,7 +1016,7 @@ function OrderDeliveryPanel({
           disabled={busy}
           onClick={() => void settle(false)}
         >
-          Save & Update
+          Save Only
         </Button>
       </div>
     </Card>
@@ -1006,30 +1046,24 @@ export function OrderDetail({ id }: { id: string }) {
   return (
     <>
       <PageTitle
-        eyebrow="JOB CARD & DELIVERY"
-        title={o.order_no}
-        description={`${o.customers?.name || ""} ${o.customers?.phone ? `· ${o.customers.phone}` : ""} · Due ${displayDate(o.promised_date)}`}
+        eyebrow={`ORDER ${o.order_no}`}
+        title={o.customers?.name || o.order_no}
+        description={`${o.customers?.phone ? `${o.customers.phone} · ` : ""}Status: ${o.status}${o.promised_date ? ` · Due ${displayDate(o.promised_date)}` : ""}`}
         action={
           <div className="row wrap" style={{ gap: 8 }}>
+            <Link className="button ghost" href="/orders">
+              All Pickups
+            </Link>
             {o.customer_id && (
               <Link className="button secondary" href={`/customers/${o.customer_id}`}>
                 Customer profile
               </Link>
             )}
             {primaryInvoice && (
-              <>
-                <Link className="button secondary" href={`/print/${primaryInvoice.id}`}>
-                  <Printer size={16} />
-                  Print Bill
-                </Link>
-                <Link
-                  className="button primary"
-                  href={`/print/${primaryInvoice.id}?layout=job`}
-                >
-                  <Printer size={16} />
-                  Lab job card
-                </Link>
-              </>
+              <Link className="button secondary" href={`/print/${primaryInvoice.id}`}>
+                <Printer size={16} />
+                {o.status === "Delivered" ? "Print Bill" : "Booking Bill"}
+              </Link>
             )}
           </div>
         }
@@ -1044,81 +1078,98 @@ export function OrderDetail({ id }: { id: string }) {
         />
       </div>
       <div className="two-column">
-        <div className="stack">
-          <Card>
-            <h2 style={{ marginBottom: 18 }}>Frame & lens details</h2>
-            {items.map((l, n) => (
-              <div className="bill-item" key={l.id || n}>
-                <strong>{l.description}</strong>
-                <p className="muted">
-                  {[
-                    l.frame_model_no,
-                    l.lens_brand,
-                    l.lens_code,
-                    l.lens_type,
-                    l.lens_index,
-                    l.coatings,
-                    l.tint,
-                    ...(l.specs ? Object.values(l.specs).filter(Boolean) : []),
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-                <small>
-                  Quantity {l.qty} {l.unit}
-                </small>
-              </div>
-            ))}
-            {prescription && <RxTable rx={prescription} />}
-          </Card>
-          <Card>
-            <h2 style={{ marginBottom: 18 }}>Associated bills</h2>
-            {invoices.map((i) => (
-              <Link
-                key={i.id}
-                className="order-card"
-                href={
-                  i.status === "draft"
-                    ? `/new-bill?draft=${i.id}`
-                    : `/print/${i.id}`
-                }
-              >
-                {i.invoice_no || "Draft"} · {i.display_status} · Balance {formatMoney(i.balance_due)}
-              </Link>
-            ))}
-          </Card>
-        </div>
         <Card>
-          <h2 style={{ marginBottom: 22 }}>Order progress</h2>
-          <Editor
-            fields={[
-              {
-                name: "status",
-                label: "Status",
-                type: "select",
-                options: orderStatuses,
-                required: true,
-              },
-              { name: "lab_name", label: "Lab name" },
-              {
-                name: "promised_date",
-                label: "Promised delivery",
-                type: "date",
-              },
-            ]}
-            initial={{ ...o }}
-            submit="Update order"
-            onSave={async (data) => {
-              await api("orders", { ...data, id });
-              toast("Order updated");
-              void result.refetch();
-            }}
-          />
+          <h2 style={{ marginBottom: 18 }}>Booked Frame &amp; Lens</h2>
+          {items.map((l, n) => (
+            <div className="bill-item" key={l.id || n}>
+              <strong>{l.description}</strong>
+              <p className="muted">
+                {[
+                  l.frame_model_no,
+                  l.lens_brand,
+                  l.lens_code,
+                  l.lens_type,
+                  l.lens_index,
+                  l.coatings,
+                  l.tint,
+                  ...(l.specs ? Object.values(l.specs).filter(Boolean) : []),
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+              <small>
+                Quantity {l.qty} {l.unit}
+              </small>
+            </div>
+          ))}
+          {prescription && <RxTable rx={prescription} />}
           {o.notes && (
-            <p className="notice" style={{ marginTop: 20 }}>
+            <p className="notice" style={{ marginTop: 16 }}>
               {o.notes}
             </p>
           )}
+        </Card>
+        <Card>
+          <details>
+            <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+              Lab tracking, bills &amp; order settings
+            </summary>
+            <div style={{ marginTop: 16 }}>
+              <Editor
+                fields={[
+                  {
+                    name: "status",
+                    label: "Status",
+                    type: "select",
+                    options: orderStatuses,
+                    required: true,
+                  },
+                  { name: "lab_name", label: "Lab name" },
+                  {
+                    name: "promised_date",
+                    label: "Promised delivery",
+                    type: "date",
+                  },
+                ]}
+                initial={{ ...o }}
+                submit="Update lab status"
+                onSave={async (data) => {
+                  await api("orders", { ...data, id });
+                  toast("Order updated");
+                  void result.refetch();
+                }}
+              />
+              {invoices.length > 0 && (
+                <div style={{ marginTop: 20 }}>
+                  <h3 style={{ marginBottom: 10 }}>Associated bills</h3>
+                  {invoices.map((i) => (
+                    <Link
+                      key={i.id}
+                      className="order-card"
+                      href={
+                        i.status === "draft"
+                          ? `/new-bill?draft=${i.id}`
+                          : `/print/${i.id}`
+                      }
+                    >
+                      {i.invoice_no || "Draft"} · {i.display_status} · Balance {formatMoney(i.balance_due)}
+                    </Link>
+                  ))}
+                </div>
+              )}
+              {primaryInvoice && (
+                <div style={{ marginTop: 12 }}>
+                  <Link
+                    className="button secondary"
+                    href={`/print/${primaryInvoice.id}?layout=job`}
+                  >
+                    <Printer size={16} />
+                    Lab job card
+                  </Link>
+                </div>
+              )}
+            </div>
+          </details>
         </Card>
       </div>
     </>

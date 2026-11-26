@@ -7,8 +7,6 @@ import {
   Users,
   Glasses,
   Package,
-  FileText,
-  ChartNoAxesCombined,
 } from "lucide-react";
 import { api, displayDate } from "@/lib/client";
 import { formatMoney } from "@/lib/money";
@@ -48,10 +46,16 @@ export function Dashboard({ initial }: { initial?: DashboardData }) {
         title="A little clarity. A better day."
         description="Welcome back. Here’s your shop at a glance."
         action={
-          <Link className="button primary" href="/new-bill">
-            <Plus size={17} />
-            New bill
-          </Link>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <Link className="button secondary" href="/orders">
+              <Package size={16} />
+              Pickups & Orders
+            </Link>
+            <Link className="button primary" href="/orders/new">
+              <Plus size={17} />
+              Book order
+            </Link>
+          </div>
         }
       />
       {!shop.privacy_version && (
@@ -94,27 +98,94 @@ export function Dashboard({ initial }: { initial?: DashboardData }) {
               />
             </div>
             <div className="quick-actions">
+              <Link href="/orders/new" className="quick-action">
+                <Plus size={18} />
+                Book frame / lens order
+                <ArrowUpRight size={16} />
+              </Link>
+              <Link href="/orders" className="quick-action">
+                <Package size={18} />
+                Customer revisit / delivery
+                <ArrowUpRight size={16} />
+              </Link>
               <Link href="/customers" className="quick-action">
                 <Users size={18} />
-                Find / Register customer
+                Find customer
                 <ArrowUpRight size={16} />
               </Link>
               <Link href="/new-bill" className="quick-action">
                 <Glasses size={18} />
-                Create bill & prescription
-                <ArrowUpRight size={16} />
-              </Link>
-              <Link href="/inventory" className="quick-action">
-                <Package size={18} />
-                Manage inventory
-                <ArrowUpRight size={16} />
-              </Link>
-              <Link href="/reports" className="quick-action">
-                <ChartNoAxesCombined size={18} />
-                Sales & tax reports
+                Direct quick bill
                 <ArrowUpRight size={16} />
               </Link>
             </div>
+            {data.due.length > 0 && (
+              <Card style={{ marginBottom: 24 }}>
+                <div className="card-heading">
+                  <div>
+                    <h2>Pending Pickups & Deliveries</h2>
+                    <p className="section-note">
+                      Customer came back to collect? Click Collect &amp; Deliver to settle balance, take photo, and print final bill.
+                    </p>
+                  </div>
+                  <Link href="/orders" className="button ghost">
+                    View all
+                  </Link>
+                </div>
+                <DataTable
+                  rows={data.due}
+                  rowKey={(o) => o.id}
+                  columns={[
+                    {
+                      key: "customer",
+                      label: "Customer",
+                      render: (o) => (
+                        <div>
+                          <strong>{o.customers?.name || "Customer"}</strong>
+                          {o.customers?.phone && (
+                            <small style={{ display: "block" }}>{o.customers.phone}</small>
+                          )}
+                        </div>
+                      ),
+                    },
+                    {
+                      key: "order",
+                      label: "Order",
+                      render: (o) => (
+                        <div>
+                          <span>{o.order_no}</span>
+                          {o.promised_date && (
+                            <small style={{ display: "block" }}>
+                              Due {displayDate(o.promised_date)}
+                            </small>
+                          )}
+                        </div>
+                      ),
+                    },
+                    {
+                      key: "balance",
+                      label: "Remaining Balance",
+                      render: (o) =>
+                        o.balance_due && o.balance_due > 0 ? (
+                          <strong>{formatMoney(o.balance_due)}</strong>
+                        ) : (
+                          <Badge>Paid</Badge>
+                        ),
+                    },
+                    {
+                      key: "action",
+                      label: "",
+                      render: (o) => (
+                        <Link href={`/orders/${o.id}`} className="button primary">
+                          Collect &amp; Deliver
+                          <ArrowUpRight size={15} />
+                        </Link>
+                      ),
+                    },
+                  ]}
+                />
+              </Card>
+            )}
             <div className="dashboard-grid">
               <Card>
                 <div className="card-heading">
