@@ -244,21 +244,12 @@ export function PrintPreview({
                 width: "auto",
                 height: "auto",
                 objectFit: "contain",
-                marginBottom: 14,
+                marginBottom: s.gstin ? 10 : 0,
                 borderRadius: 6,
               }}
             />
           )}
-          <h1>{s.name}</h1>
-          {s.legal_name && s.legal_name !== s.name && <p>{s.legal_name}</p>}
-          {[s.address, s.city, s.state, s.pincode].some(Boolean) && (
-            <p>
-              {[s.address, s.city, s.state, s.pincode].filter(Boolean).join(", ")}
-            </p>
-          )}
-          <p>
-            {[s.phone, s.email].filter(Boolean).join(" · ")}
-          </p>
+          {(layout === "thermal" || !logo) && <h1>{s.name}</h1>}
           {s.gstin && <p>GSTIN: {s.gstin}</p>}
         </header>
         <section className="print-section">
@@ -269,7 +260,9 @@ export function PrintPreview({
                   ? "Lab job card"
                   : layout === "prescription"
                     ? "Prescription"
-                    : i.type.replaceAll("_", " ").toUpperCase()}
+                    : i.type === "tax_invoice"
+                      ? "Bill"
+                      : i.type.replaceAll("_", " ").toUpperCase()}
               </h2>
               <strong>
                 {layout === "job" ? order.order_no : i.invoice_no}

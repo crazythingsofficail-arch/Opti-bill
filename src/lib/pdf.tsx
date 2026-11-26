@@ -363,29 +363,15 @@ export async function renderInvoicePdf(
                 width: 150,
                 height: 50,
                 objectFit: "contain",
-                marginBottom: 10,
+                marginBottom: shop.gstin ? 8 : 0,
               }}
             />
           )}
-          <Text style={[s.name, thermal ? { fontSize: 16 } : {}]}>
-            {shop.name}
-          </Text>
-          {(shop.legal_name && shop.legal_name !== shop.name) ||
-          [shop.address, shop.city, shop.state, shop.pincode].some(Boolean) ? (
-            <Text style={s.muted}>
-              {[
-                shop.legal_name && shop.legal_name !== shop.name ? shop.legal_name : "",
-                [shop.address, shop.city, shop.state, shop.pincode]
-                  .filter(Boolean)
-                  .join(", "),
-              ]
-                .filter(Boolean)
-                .join(" · ")}
+          {(thermal || !pdfLogo) && (
+            <Text style={[s.name, thermal ? { fontSize: 16 } : {}]}>
+              {shop.name}
             </Text>
-          ) : null}
-          <Text style={s.muted}>
-            {[shop.phone, shop.email].filter(Boolean).join(" · ")}
-          </Text>
+          )}
           {shop.gstin && <Text style={s.muted}>GSTIN: {shop.gstin}</Text>}
         </View>
         <View style={s.section}>
@@ -394,7 +380,9 @@ export async function renderInvoicePdf(
               ? "Lab job card"
               : rxOnly
                 ? "Prescription"
-                : i.type.replaceAll("_", " ").toUpperCase()}
+                : i.type === "tax_invoice"
+                  ? "Bill"
+                  : i.type.replaceAll("_", " ").toUpperCase()}
           </Text>
           <View style={s.row}>
             <Text>{job ? order.order_no : i.invoice_no}</Text>

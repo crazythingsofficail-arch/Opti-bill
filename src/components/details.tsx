@@ -449,7 +449,7 @@ export function InvoiceDetail({ id }: { id: string }) {
   return (
     <>
       <PageTitle
-        eyebrow={i.type.replaceAll("_", " ")}
+        eyebrow={i.type === "tax_invoice" ? "Bill" : i.type.replaceAll("_", " ")}
         title={i.invoice_no || "Draft invoice"}
         description={`${i.customer_snapshot?.name || ""} · ${displayDate(i.finalised_at || i.created_at)}`}
         action={
